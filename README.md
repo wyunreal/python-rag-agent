@@ -39,12 +39,16 @@ the legal texts.
 
 - Texts come from the BOE open-data API. Legal provisions are excluded from
   copyright under **Art. 13 TRLPI** (RDL 1/1996).
-- Reuse follows the BOE's conditions (framework: **Ley 37/2007**, **RD
-  1495/2011**): attribute the source, do not distort the content, keep the
-  update dates, do not imply official endorsement.
-- Every generated document carries that attribution, the reference date, the
-  official URL and the notice that the authentic version is the one published in
-  the BOE.
+- Reuse follows the BOE's **conditions of reuse** (Resolución of 27 June 2024,
+  in force since 28 June 2024): do not distort the content, cite the source with
+  a link to <https://www.boe.es>, keep the update dates, identify any
+  modification, and do not suggest official character or endorsement.
+- Because the documents are transformed, the citation used is the one the
+  licence requires for derivative reuse — *«Basado en datos de la Agencia Estatal
+  Boletín Oficial del Estado»* — plus the adaptation note.
+- Each generated document also states that a consolidated text is merely
+  informative, and gives the BOE identifier, the last update published by the
+  BOE, the reference date and the official URL.
 - The corpus is generated locally and is **not** distributed here: `data/` is
   gitignored and fully regenerable.
 - This project is independent from the BOE and is not endorsed by it.
@@ -52,3 +56,9 @@ the legal texts.
 Art. 13 covers legal provisions and court rulings, not every document published
 in an official gazette. Any new source needs its own licence and reuse analysis
 before joining the corpus.
+
+**On temporal accuracy:** `--as-of` rebuilds versions from the consolidated text,
+which reflects express amendments and repeals. It does not resolve tacit
+repeals, transitional regimes or interpretive questions, and it is not a
+substitute for checking the official publication. When the BOE flags a text as
+*Desactualizado*, the generated document says so visibly.

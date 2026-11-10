@@ -30,6 +30,10 @@ from cache.
 To try one without registering it, pass the ID directly — its manifest entry
 records `registered: false`. To remove a norm, delete its `[[norm]]` table.
 
+Identifiers are validated before being used to build paths: the expected shape
+is `BOE-A-1978-31229`, and regional forms such as `BOJA-b-2021-90155` are
+accepted too.
+
 `search` filters a cached catalogue (`data/catalogue.xml`, ~11 MB, 10,000 norms)
 because the API's own `query` parameter returns HTTP 500.
 
@@ -45,17 +49,28 @@ data/
 └── manifest.jsonl                   # provenance, hashes, block counts
 ```
 
-Each generated document opens with the reuse notice, the BOE identifier, the
-last update published by the BOE, the reference date and the official URL.
+Each generated document opens with the reuse notice required for derivative use
+— *Basado en datos de la Agencia Estatal Boletín Oficial del Estado*, linking to
+<https://www.boe.es> — plus the BOE identifier, the last update published by the
+BOE, the reference date, the official URL and the note that the format was
+adapted.
 
 `<ID>.index.jsonl` carries one record per rendered block:
 
 ```json
-{"as_of":"2026-11-10","block_id":"a8","heading":"Artículo 8.","kind":"precepto","published":"2000-01-08","in_force":"2001-01-08","url":".../texto/bloque/a8"}
+{"as_of": "2026-11-10", "block_id": "a8", "heading": "Artículo 8.",
+ "kind": "precepto", "published": "2000-01-08", "in_force": "2001-01-08",
+ "norm_id": "BOE-A-1889-4763", "consolidation_status": "Finalizado",
+ "source_last_updated": "2026-09-07T12:59:34Z",
+ "amending_norm": "BOE-A-2001-13160",
+ "amending_norm_url": "https://www.boe.es/buscar/act.php?id=BOE-A-2001-13160",
+ "url": ".../texto/bloque/a8"}
 ```
 
-so a chunker can attach each article's own version dates instead of only the
-document's.
+`amending_norm` is the norm that introduced the rendered wording (taken from the
+`id_norma` attribute of the version), empty when the wording is the original one.
+With it a chunker can answer not only *what* the article says but *which law*
+put it there.
 
 `data/` is gitignored and fully regenerable.
 
@@ -79,6 +94,16 @@ neither the law nor `--as-of` changed.
 
 Access is polite: honest `User-Agent`, 1 request/second, `4xx` reported and not
 retried. No HTML scraping.
+
+## Consolidation status
+
+The API reports `estado_consolidacion` as `Finalizado` or `Desactualizado`. A
+norm can stay *desactualizado* for a few days after an amendment is published,
+while the BOE folds it into the consolidated text.
+
+When that happens the run prints a warning, the manifest records
+`consolidation_stale: true`, and the document header shows it. The text is still
+written: it is a freshness caveat, not a reason to skip the norm.
 
 ## Markdown structure
 

@@ -70,6 +70,16 @@ def _throttle() -> None:
     _last_request_at = time.monotonic()
 
 
+def _retry_after(header: str | None, attempt: int) -> float:
+    """Honour Retry-After when the server sends it, capped to a sane wait."""
+    if header:
+        try:
+            return min(max(float(header), 0.0), 60.0)
+        except ValueError:
+            pass
+    return float(2 ** (attempt - 1))
+
+
 def _get(url: str) -> bytes:
     request = urllib.request.Request(
         url,
@@ -84,9 +94,16 @@ def _get(url: str) -> bytes:
                 return response.read()
         except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
             last_error = exc
-            # A refused request (4xx) is not retried: that is a decision, not a hiccup.
-            if isinstance(exc, urllib.error.HTTPError) and 400 <= exc.code < 500:
-                break
+            if isinstance(exc, urllib.error.HTTPError):
+                if exc.code in (429, 503):
+                    # Back off as asked, then retry.
+                    if attempt < MAX_ATTEMPTS:
+                        time.sleep(_retry_after(exc.headers.get("Retry-After"), attempt))
+                        continue
+                    break
+                # Any other refusal is a decision, not a hiccup.
+                if 400 <= exc.code < 500:
+                    break
             if attempt < MAX_ATTEMPTS:
                 time.sleep(2 ** (attempt - 1))
 

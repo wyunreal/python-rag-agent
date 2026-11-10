@@ -16,6 +16,14 @@ REUSE_NOTICE = (
     "La versión auténtica es la publicada en el «Boletín Oficial del Estado»."
 )
 
+# Required wording for derivative reuse (BOE reuse conditions, 27 June 2024,
+# condition fourth): adaptations must cite "Basado en datos de..." and link
+# to boe.es, and must identify the modifications made.
+ATTRIBUTION = (
+    "Basado en datos de la "
+    "[Agencia Estatal Boletín Oficial del Estado](https://www.boe.es)."
+)
+
 _WHITESPACE = re.compile(r"\s+")
 
 # Legal hierarchy -> Markdown heading depth. Subsección shares Sección's level
@@ -223,26 +231,53 @@ def _block_heading(block: ET.Element, versions: list[ET.Element]) -> str:
     return block.get("titulo") or block.get("id") or ""
 
 
+def _notice(meta: dict[str, object], *, pending: bool = False) -> str:
+    """Reuse notice shared by the main and the pending documents."""
+    updated = str(meta.get("last_updated") or "").split("T")[0]
+    document_line = f"> Documento: {meta['id']}"
+    if updated:
+        document_line += f" · última actualización {updated}"
+    document_line += f" · versión consultada {meta['as_of']}"
+
+    lines = [
+        f"> {ATTRIBUTION}",
+        ">",
+        f"> {REUSE_NOTICE}",
+    ]
+    if meta.get("consolidation_stale"):
+        lines += [
+            ">",
+            "> **Aviso: el BOE marca este texto consolidado como desactualizado.**",
+            "> Puede no incorporar modificaciones recientes.",
+        ]
+    if pending:
+        lines += [
+            ">",
+            "> Documento de reformas publicadas y **no vigentes** a "
+            f"{meta['as_of']}. No debe citarse como derecho vigente.",
+        ]
+    lines.append(">")
+    lines.append(document_line)
+    if meta.get("html_url"):
+        lines.append(f"> {meta['html_url']}")
+    lines += [
+        ">",
+        "> Formato y estructura adaptados a Markdown por python-rag-agent.",
+        "> Proyecto independiente del BOE; no está respaldado por él.",
+    ]
+    return "\n".join(lines)
+
+
 def _pending_document(
     meta: dict[str, object],
     sections: list[tuple[ET.Element, list[ET.Element]]],
-    *,
-    as_of: str,
 ) -> str | None:
     if not sections:
         return None
 
     parts = [
         _front_matter({**meta, "pending": True}),
-        "\n".join(
-            [
-                f"> {REUSE_NOTICE}",
-                ">",
-                f"> Documento de reformas publicadas y **no vigentes** a "
-                f"{iso_date(as_of)}. No debe citarse como derecho vigente.",
-                f"> Fuente: {meta['html_url']} · ELI: {meta['eli_url']}",
-            ]
-        ),
+        _notice(meta, pending=True),
         f"# Reformas pendientes — {meta['title']}",
     ]
 
@@ -332,29 +367,31 @@ def render_document(
         body.extend(rendered)
 
         block_id = block.get("id") or ""
+        amending = version.get("id_norma") or ""
+        if amending == meta["id"]:
+            amending = ""
         index.append(
             {
-                "as_of": iso_date(as_of),
+                "as_of": meta["as_of"],
                 "block_id": block_id,
                 "kind": block.get("tipo") or "",
                 "heading": _heading_of(rendered, block),
                 "published": iso_date(version.get("fecha_publicacion")) or "",
                 "in_force": iso_date(version.get("fecha_vigencia")) or "",
                 "url": f"{meta['source_url']}/texto/bloque/{block_id}",
+                "norm_id": meta["id"],
+                "consolidation_status": meta["consolidation_status"],
+                "source_last_updated": meta["last_updated"],
+                "amending_norm": amending,
+                "amending_norm_url": (
+                    f"https://www.boe.es/buscar/act.php?id={amending}"
+                    if amending
+                    else ""
+                ),
             }
         )
 
-    updated = str(meta.get("last_updated") or "").split("T")[0]
-    quote = "\n".join(
-        [
-            f"> {REUSE_NOTICE}",
-            ">",
-            f"> Fuente: Agencia Estatal BOE · {meta['id']} · última actualización {updated}",
-            f"> Versión consultada: {meta['as_of']} · {meta['html_url']}",
-            ">",
-            "> Proyecto independiente del BOE; no está respaldado por él.",
-        ]
-    )
+    quote = _notice(meta)
 
     front = {
         **meta,
@@ -386,7 +423,7 @@ def render_document(
 
     return RenderedDocument(
         markdown=document,
-        pending_markdown=_pending_document(meta, pending_sections, as_of=as_of),
+        pending_markdown=_pending_document(meta, pending_sections),
         index=index,
         stats=stats,
     )

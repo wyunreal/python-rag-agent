@@ -26,7 +26,7 @@ from boe_ingest.boe import (
     fetch_catalogue,
     parse_catalogue,
 )
-from boe_ingest.registry import Norm, RegistryError
+from boe_ingest.registry import Norm, RegistryError, validated_id
 from boe_ingest.registry import load as load_registry
 from boe_ingest.render import REUSE_NOTICE, iso_date, iso_timestamp, render_document
 
@@ -83,6 +83,7 @@ def _fold(value: str) -> str:
 def _metadata(
     data: ET.Element, norm: Norm, *, registered: bool, as_of: str
 ) -> dict[str, object]:
+    status = _text_of(data, "metadatos/estado_consolidacion")
     return {
         "schema_version": SCHEMA_VERSION,
         "id": norm.id,
@@ -99,7 +100,8 @@ def _metadata(
         "publication_date": iso_date(_text_of(data, "metadatos/fecha_publicacion")),
         "in_force_date": iso_date(_text_of(data, "metadatos/fecha_vigencia")),
         "last_updated": iso_timestamp(_text_of(data, "metadatos/fecha_actualizacion")),
-        "consolidation_status": _text_of(data, "metadatos/estado_consolidacion"),
+        "consolidation_status": status,
+        "consolidation_stale": status.casefold() == "desactualizado",
         "repealed": _text_of(data, "metadatos/estatus_derogacion") == "S",
         "source": "Agencia Estatal BOE - API de legislación consolidada",
         "source_url": f"{Resource(norm.id, 'metadatos').url.rsplit('/', 1)[0]}",
@@ -232,7 +234,11 @@ def cmd_fetch(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
 
     if args.ids:
         targets: list[tuple[Norm, bool]] = []
-        for norm_id in args.ids:
+        for raw_id in args.ids:
+            try:
+                norm_id = validated_id(raw_id)
+            except RegistryError as exc:
+                parser.error(str(exc))
             norm = known.get(norm_id) or Norm(id=norm_id, title="")
             targets.append((norm, norm_id in known))
     else:
@@ -274,6 +280,11 @@ def cmd_fetch(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
             + f", {corpus['characters']:,} chars → {corpus['path']}"
         )
 
+        if entry.get("consolidation_stale"):
+            print(
+                "  warning: the BOE marks this consolidated text as "
+                "'Desactualizado'; it may not include recent amendments"
+            )
         if pending:
             print(
                 f"  warning: {pending} block(s) excluded, they enter into force "

@@ -6,6 +6,7 @@ ingest code never hardcodes identifiers, so adding a norm is a data change.
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +14,22 @@ from pathlib import Path
 
 class RegistryError(ValueError):
     """Raised when the registry file is missing or malformed."""
+
+
+# The consolidated catalogue contains both state norms (BOE-A-1978-31229) and
+# regional gazettes (BOJA-b-2021-90155, DOGC-f-2008-90017), hence the general
+# shape. The identifier is used to build local paths, so it is validated.
+_ID_PATTERN = re.compile(r"^[A-Z]{2,6}-[A-Za-z]-\d{4}-\d+$")
+
+
+def validated_id(value: str) -> str:
+    candidate = value.strip()
+    if not _ID_PATTERN.fullmatch(candidate):
+        raise RegistryError(
+            f"invalid norm identifier {value!r}; expected a form such as "
+            "BOE-A-1978-31229"
+        )
+    return candidate
 
 
 @dataclass(frozen=True)
@@ -54,7 +71,7 @@ def load(path: Path) -> list[Norm]:
         if not isinstance(entry, dict):
             raise RegistryError(f"{path}: [[norm]] #{position} is not a table")
 
-        norm_id = str(entry.get("id", "")).strip()
+        norm_id = validated_id(str(entry.get("id", "")))
         title = str(entry.get("title", "")).strip()
         if not norm_id or not title:
             raise RegistryError(
