@@ -15,12 +15,21 @@ Defined in [`config/norms.toml`](config/norms.toml), not in code.
 
 ## Setup
 
-Python 3.11+, no dependencies.
+Python 3.11+. No runtime dependencies.
 
 ```bash
 make venv                 # create .venv
 source .venv/bin/activate
 make list                 # sanity check
+```
+
+Development tools live in the `dev` extra, so installing the package does not
+pull a linter:
+
+```bash
+pip install -e ".[dev]"   # ruff
+make lint                 # ruff check
+make format               # ruff format
 ```
 
 `make clean` removes the venv and refuses to delete a non-venv directory.
@@ -66,7 +75,7 @@ Every file starts with this block, before any legal text:
 >
 > Texto consolidado de carácter meramente informativo. La versión auténtica es la publicada en el «Boletín Oficial del Estado».
 >
-> Documento: BOE-A-1889-4763 · última actualización 2026-09-07 · versión consultada 2026-11-10
+> Documento: BOE-A-1889-4763 · última actualización 2026-09-07 · referencia 2026-11-10
 > https://www.boe.es/buscar/act.php?id=BOE-A-1889-4763
 >
 > Formato y estructura adaptados a Markdown por python-rag-agent.

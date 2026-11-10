@@ -19,6 +19,7 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 from boe_ingest.boe import (
+    RESOURCE_ROOT,
     BOEError,
     Resource,
     data_of,
@@ -41,11 +42,19 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATA_DIR = ROOT / "data"
 DEFAULT_REGISTRY = ROOT / "config" / "norms.toml"
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
-LICENSE = (
-    "Art. 13 TRLPI: las disposiciones legales y reglamentarias no son objeto "
-    "de propiedad intelectual"
+LEGAL_BASIS = (
+    "Art. 13, Real Decreto Legislativo 1/1996: las disposiciones legales no son "
+    "objeto de propiedad intelectual"
+)
+REUSE_CONDITIONS = (
+    "Condiciones de reutilización de la Agencia Estatal BOE "
+    "(Resolución de 27 de junio de 2024)"
+)
+TRANSFORMATION = (
+    "XML to Markdown; bloques derogados y no vigentes omitidos; "
+    "redacción sin alterar"
 )
 
 COMMANDS = {"fetch", "search", "list"}
@@ -100,22 +109,30 @@ def _metadata(
         "ambito": _text_of(data, "metadatos/ambito"),
         "tags": list(norm.tags),
         "registered": registered,
-        "as_of": iso_date(as_of),
+        # Provenance, kept flat because vector stores require scalar metadata.
+        "source_name": "Agencia Estatal Boletín Oficial del Estado",
+        "source_url": BOE_URL,
+        "source_document_url": _text_of(data, "metadatos/url_html_consolidada"),
+        "source_api_url": f"{RESOURCE_ROOT}/{norm.id}",
         "eli_url": _text_of(data, "metadatos/url_eli"),
-        "html_url": _text_of(data, "metadatos/url_html_consolidada"),
+        "legal_basis": LEGAL_BASIS,
+        "reuse_conditions": REUSE_CONDITIONS,
+        "attribution": ATTRIBUTION_PLAIN,
+        "reuse_notice": REUSE_NOTICE,
+        "transformation": TRANSFORMATION,
+        # The reference date is the law's, not the document's.
+        "reference_date": iso_date(as_of),
+        "source_last_updated": iso_timestamp(
+            _text_of(data, "metadatos/fecha_actualizacion")
+        ),
         "disposition_date": iso_date(_text_of(data, "metadatos/fecha_disposicion")),
         "publication_date": iso_date(_text_of(data, "metadatos/fecha_publicacion")),
         "in_force_date": iso_date(_text_of(data, "metadatos/fecha_vigencia")),
-        "last_updated": iso_timestamp(_text_of(data, "metadatos/fecha_actualizacion")),
+        # Administrative metadata from the BOE, not a legal certification.
         "consolidation_status": status,
         "consolidation_stale": status.casefold() == "desactualizado",
         "repealed": _text_of(data, "metadatos/estatus_derogacion") == "S",
-        "source": "Agencia Estatal BOE - API de legislación consolidada",
-        "source_url": f"{Resource(norm.id, 'metadatos').url.rsplit('/', 1)[0]}",
-        "license": LICENSE,
-        "attribution": ATTRIBUTION_PLAIN,
-        "boe_url": BOE_URL,
-        "reuse_notice": REUSE_NOTICE,
+        "verification_required": True,
     }
 
 
@@ -148,7 +165,7 @@ def process(
     text_data = data_of(text_bytes, source=f"{norm.id}/texto")
 
     meta = _metadata(metadata_data, norm, registered=registered, as_of=as_of)
-    fetched_at = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
+    fetched_at = dt.datetime.now(dt.UTC).replace(microsecond=0).isoformat()
 
     rendered = render_document(meta, text_data, as_of=as_of)
 

@@ -1,0 +1,33 @@
+name: lint
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # Installs the package through the dev extra, which also validates that
+      # pyproject.toml builds correctly.
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check boe_ingest
+
+      # Offline smoke test: reads the registry, never touches the network.
+      - name: Smoke test
+        run: python -m boe_ingest list

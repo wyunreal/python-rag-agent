@@ -236,11 +236,11 @@ def _block_heading(block: ET.Element, versions: list[ET.Element]) -> str:
 
 def _notice(meta: dict[str, object], *, pending: bool = False) -> str:
     """Reuse notice shared by the main and the pending documents."""
-    updated = str(meta.get("last_updated") or "").split("T")[0]
+    updated = str(meta.get("source_last_updated") or "").split("T")[0]
     document_line = f"> Documento: {meta['id']}"
     if updated:
         document_line += f" · última actualización {updated}"
-    document_line += f" · versión consultada {meta['as_of']}"
+    document_line += f" · referencia {meta['reference_date']}"
 
     lines = [
         f"> {ATTRIBUTION}",
@@ -257,12 +257,12 @@ def _notice(meta: dict[str, object], *, pending: bool = False) -> str:
         lines += [
             ">",
             "> Documento de reformas publicadas y **no vigentes** a "
-            f"{meta['as_of']}. No debe citarse como derecho vigente.",
+            f"{meta['reference_date']}. No debe citarse como derecho vigente.",
         ]
     lines.append(">")
     lines.append(document_line)
-    if meta.get("html_url"):
-        lines.append(f"> {meta['html_url']}")
+    if meta.get("source_document_url"):
+        lines.append(f"> {meta['source_document_url']}")
     lines += [
         ">",
         "> Formato y estructura adaptados a Markdown por python-rag-agent.",
@@ -375,16 +375,16 @@ def render_document(
             amending = ""
         index.append(
             {
-                "as_of": meta["as_of"],
+                "reference_date": meta["reference_date"],
                 "block_id": block_id,
                 "kind": block.get("tipo") or "",
                 "heading": _heading_of(rendered, block),
                 "published": iso_date(version.get("fecha_publicacion")) or "",
                 "in_force": iso_date(version.get("fecha_vigencia")) or "",
-                "url": f"{meta['source_url']}/texto/bloque/{block_id}",
+                "url": f"{meta['source_api_url']}/texto/bloque/{block_id}",
                 "norm_id": meta["id"],
                 "consolidation_status": meta["consolidation_status"],
-                "source_last_updated": meta["last_updated"],
+                "source_last_updated": meta["source_last_updated"],
                 "amending_norm": amending,
                 "amending_norm_url": (
                     f"https://www.boe.es/buscar/act.php?id={amending}"

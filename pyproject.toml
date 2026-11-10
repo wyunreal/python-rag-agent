@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "python-rag-agent"
 version = "0.1.0"
@@ -5,8 +9,21 @@ description = "RAG agent over Spanish consolidated legislation (BOE open data)"
 requires-python = ">=3.11"
 dependencies = []
 
+# Development tools only: `pip install -e ".[dev]"`.
+# Kept out of `dependencies` so installing the package does not pull a linter.
+[project.optional-dependencies]
+dev = ["ruff>=0.6"]
+
 [project.scripts]
 boe-ingest = "boe_ingest.cli:main"
 
 [tool.setuptools]
 packages = ["boe_ingest"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["boe_ingest"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "SIM", "UP"]

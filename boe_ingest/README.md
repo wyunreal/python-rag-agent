@@ -58,7 +58,7 @@ adapted.
 `<ID>.index.jsonl` carries one record per rendered block:
 
 ```json
-{"as_of": "2026-11-10", "block_id": "a8", "heading": "Artículo 8.",
+{"reference_date": "2026-11-10", "block_id": "a8", "heading": "Artículo 8.",
  "kind": "precepto", "published": "2000-01-08", "in_force": "2001-01-08",
  "norm_id": "BOE-A-1889-4763", "consolidation_status": "Finalizado",
  "source_last_updated": "2026-09-07T12:59:34Z",
@@ -118,9 +118,19 @@ explicit validation before serving those chunks as current law.
 | Sección / Subsección | `#####` |
 | Artículo | `######` |
 
-Front-matter carries `id`, `title`, `rango`, `tags`, `eli_url`, dates,
-`consolidation_status`, `as_of`, `blocks_pending`,
-`blocks_with_future_amendment` and `schema_version`.
+Front-matter (`schema_version: 2`) groups the fields in four blocks:
+
+- identity: `id`, `title`, `rango`, `departamento`, `ambito`, `tags`, `registered`
+- provenance: `source_name`, `source_url`, `source_document_url`,
+  `source_api_url`, `eli_url`
+- legal: `legal_basis`, `reuse_conditions`, `attribution`, `reuse_notice`,
+  `transformation`
+- dates and status: `reference_date`, `source_last_updated`,
+  `disposition_date`, `publication_date`, `in_force_date`,
+  `consolidation_status`, `consolidation_stale`, `repealed`,
+  `verification_required`, `blocks_pending`, `blocks_with_future_amendment`
+
+Fields are flat on purpose: vector stores require scalar metadata.
 
 ## Dates and versions
 
@@ -140,7 +150,7 @@ It decides:
 - which blocks count as repealed (`fecha_caducidad`);
 - which blocks are not yet in force;
 - whether `<ID>.pending.md` is generated;
-- the `as_of` value written to the front-matter and the manifest.
+- the `reference_date` value written to the front-matter and the manifest.
 
 It does **not** change what is downloaded. `data/raw/` always holds every
 version, so changing the date re-renders from cache without touching the network.
