@@ -40,9 +40,22 @@ data/
 ├── raw/<ID>/{metadatos,texto}.xml   # verbatim API responses
 ├── corpus/<ID>.md                   # law in force as of the reference date
 ├── corpus/<ID>.pending.md           # only when future wording exists
+├── corpus/<ID>.index.jsonl          # one record per block: provenance
 ├── catalogue.xml                    # cached list for `search`
 └── manifest.jsonl                   # provenance, hashes, block counts
 ```
+
+Each generated document opens with the reuse notice, the BOE identifier, the
+last update published by the BOE, the reference date and the official URL.
+
+`<ID>.index.jsonl` carries one record per rendered block:
+
+```json
+{"as_of":"2026-11-10","block_id":"a8","heading":"Artículo 8.","kind":"precepto","published":"2000-01-08","in_force":"2001-01-08","url":".../texto/bloque/a8"}
+```
+
+so a chunker can attach each article's own version dates instead of only the
+document's.
 
 `data/` is gitignored and fully regenerable.
 

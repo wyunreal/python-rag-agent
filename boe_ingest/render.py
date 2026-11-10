@@ -171,11 +171,29 @@ class RenderedDocument:
     `pending_markdown` holds the wording that is published but not yet in force.
     Keeping it in a separate file means the main corpus stays "law in force",
     while a retrieval layer can opt in to the future text.
+
+    `index` is one record per rendered block, so a later chunker can carry the
+    provenance of each article instead of only the document's.
     """
 
     markdown: str
     pending_markdown: str | None
+    index: list[dict[str, object]]
     stats: dict[str, object]
+
+
+def _heading_of(rendered: list[str], block: ET.Element) -> str:
+    """Best label for a block, for the provenance index."""
+    if block.get("id") == "preambulo" or block.get("tipo") == "preambulo":
+        return "Preámbulo"
+    if block.get("tipo") == "firma":
+        return "Firma"
+    if block.get("tipo") == "nota_inicial":
+        return "Nota editorial"
+    for line in rendered:
+        if line.startswith("#"):
+            return line.lstrip("#").strip()
+    return block.get("titulo") or ""
 
 
 def _pending_note(future: list[ET.Element]) -> str:
@@ -300,6 +318,7 @@ def render_document(
         in_force.append((block, version, future))
 
     body: list[str] = []
+    index: list[dict[str, object]] = []
     for block, version, future in in_force:
         rendered = _render_paragraphs(version.findall("p"))
         if block.get("tipo") == "nota_inicial":
@@ -312,11 +331,28 @@ def render_document(
             rendered.insert(position, _pending_note(future))
         body.extend(rendered)
 
+        block_id = block.get("id") or ""
+        index.append(
+            {
+                "as_of": iso_date(as_of),
+                "block_id": block_id,
+                "kind": block.get("tipo") or "",
+                "heading": _heading_of(rendered, block),
+                "published": iso_date(version.get("fecha_publicacion")) or "",
+                "in_force": iso_date(version.get("fecha_vigencia")) or "",
+                "url": f"{meta['source_url']}/texto/bloque/{block_id}",
+            }
+        )
+
+    updated = str(meta.get("last_updated") or "").split("T")[0]
     quote = "\n".join(
         [
             f"> {REUSE_NOTICE}",
             ">",
-            f"> Fuente: {meta['html_url']} · ELI: {meta['eli_url']}",
+            f"> Fuente: Agencia Estatal BOE · {meta['id']} · última actualización {updated}",
+            f"> Versión consultada: {meta['as_of']} · {meta['html_url']}",
+            ">",
+            "> Proyecto independiente del BOE; no está respaldado por él.",
         ]
     )
 
@@ -351,5 +387,6 @@ def render_document(
     return RenderedDocument(
         markdown=document,
         pending_markdown=_pending_document(meta, pending_sections, as_of=as_of),
+        index=index,
         stats=stats,
     )

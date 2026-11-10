@@ -144,6 +144,16 @@ def process(
     corpus_path = corpus_dir / f"{norm.id}.md"
     _write_atomic(corpus_path, rendered.markdown.encode("utf-8"))
 
+    index_path = corpus_dir / f"{norm.id}.index.jsonl"
+    index_payload = (
+        "\n".join(
+            json.dumps(entry, ensure_ascii=False, sort_keys=True)
+            for entry in rendered.index
+        )
+        + "\n"
+    )
+    _write_atomic(index_path, index_payload.encode("utf-8"))
+
     pending_path = corpus_dir / f"{norm.id}.pending.md"
     if rendered.pending_markdown:
         pending_bytes = rendered.pending_markdown.encode("utf-8")
@@ -175,6 +185,11 @@ def process(
             "characters": len(rendered.markdown),
         },
         "pending": pending_entry,
+        "index": {
+            "path": str(index_path.relative_to(corpus_dir.parent)),
+            "sha256": _sha256(index_payload.encode("utf-8")),
+            "entries": len(rendered.index),
+        },
         "blocks": rendered.stats,
     }
 

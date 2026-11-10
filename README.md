@@ -13,10 +13,6 @@ Defined in [`config/norms.toml`](config/norms.toml), not in code.
 | Código Civil | `BOE-A-1889-4763` | `civil` |
 | Código Penal (LO 10/1995) | `BOE-A-1995-25444` | `penal` |
 
-Legal texts are not subject to intellectual property (**Art. 13 TRLPI**). Each
-output file states that a consolidated text is *meramente informativo* and that
-the authentic version is the one published in the BOE.
-
 ## Setup
 
 Python 3.11+, no dependencies.
@@ -36,7 +32,23 @@ make list                 # sanity check
   works, corpus layout, adding norms, `--as-of` and pending amendments.
 - [`config/norms.toml`](config/norms.toml) — the corpus registry.
 
-## License
+## Data and legal notice
 
-Code is MIT (see [`LICENSE`](LICENSE)). `data/` is gitignored and fully
-regenerable, so the repository ships code and configuration only.
+The **code is MIT** (see [`LICENSE`](LICENSE)); that licence does not extend to
+the legal texts.
+
+- Texts come from the BOE open-data API. Legal provisions are excluded from
+  copyright under **Art. 13 TRLPI** (RDL 1/1996).
+- Reuse follows the BOE's conditions (framework: **Ley 37/2007**, **RD
+  1495/2011**): attribute the source, do not distort the content, keep the
+  update dates, do not imply official endorsement.
+- Every generated document carries that attribution, the reference date, the
+  official URL and the notice that the authentic version is the one published in
+  the BOE.
+- The corpus is generated locally and is **not** distributed here: `data/` is
+  gitignored and fully regenerable.
+- This project is independent from the BOE and is not endorsed by it.
+
+Art. 13 covers legal provisions and court rulings, not every document published
+in an official gazette. Any new source needs its own licence and reuse analysis
+before joining the corpus.
