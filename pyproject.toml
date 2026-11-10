@@ -1,0 +1,12 @@
+[project]
+name = "python-rag-agent"
+version = "0.1.0"
+description = "RAG agent over Spanish consolidated legislation (BOE open data)"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+boe-ingest = "boe_ingest.cli:main"
+
+[tool.setuptools]
+packages = ["boe_ingest"]
