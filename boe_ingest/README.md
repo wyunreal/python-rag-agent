@@ -105,6 +105,9 @@ When that happens the run prints a warning, the manifest records
 `consolidation_stale: true`, and the document header shows it. The text is still
 written: it is a freshness caveat, not a reason to skip the norm.
 
+A future indexer should treat `consolidation_stale: true` as a reason to require
+explicit validation before serving those chunks as current law.
+
 ## Markdown structure
 
 | Level | Markdown |

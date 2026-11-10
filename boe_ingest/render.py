@@ -19,9 +19,12 @@ REUSE_NOTICE = (
 # Required wording for derivative reuse (BOE reuse conditions, 27 June 2024,
 # condition fourth): adaptations must cite "Basado en datos de..." and link
 # to boe.es, and must identify the modifications made.
+BOE_URL = "https://www.boe.es"
+ATTRIBUTION_PLAIN = (
+    "Basado en datos de la Agencia Estatal Boletín Oficial del Estado"
+)
 ATTRIBUTION = (
-    "Basado en datos de la "
-    "[Agencia Estatal Boletín Oficial del Estado](https://www.boe.es)."
+    f"Basado en datos de la [Agencia Estatal Boletín Oficial del Estado]({BOE_URL})."
 )
 
 _WHITESPACE = re.compile(r"\s+")

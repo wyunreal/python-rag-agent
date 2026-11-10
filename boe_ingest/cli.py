@@ -28,7 +28,14 @@ from boe_ingest.boe import (
 )
 from boe_ingest.registry import Norm, RegistryError, validated_id
 from boe_ingest.registry import load as load_registry
-from boe_ingest.render import REUSE_NOTICE, iso_date, iso_timestamp, render_document
+from boe_ingest.render import (
+    ATTRIBUTION_PLAIN,
+    BOE_URL,
+    REUSE_NOTICE,
+    iso_date,
+    iso_timestamp,
+    render_document,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATA_DIR = ROOT / "data"
@@ -106,6 +113,8 @@ def _metadata(
         "source": "Agencia Estatal BOE - API de legislación consolidada",
         "source_url": f"{Resource(norm.id, 'metadatos').url.rsplit('/', 1)[0]}",
         "license": LICENSE,
+        "attribution": ATTRIBUTION_PLAIN,
+        "boe_url": BOE_URL,
         "reuse_notice": REUSE_NOTICE,
     }
 
