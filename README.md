@@ -84,7 +84,7 @@ answering and cites the norm, article and official BOE URL.
   models, and bge-m3 is strong on Spanish and multilingual text.
 - **Vector store:** `data/index/` (`embeddings.npy` + `chunks.jsonl`). It is
   rebuilt automatically when the corpus, the embedding model or the chunking
-  version changes.
+  version changes. See [Rebuilding the index](#rebuilding-the-index).
 
 ```bash
 cp .env.example .env      # add OLLAMA_API_KEY from ollama.com/settings/keys
@@ -117,6 +117,39 @@ How the pieces fit:
 4. [`agent/agent.py`](agent/agent.py) builds the LangChain agent with the model,
    the tool and the legal system prompt in
    [`agent/prompts.py`](agent/prompts.py).
+
+## Rebuilding the index
+
+`ensure_index()` compares the stored fingerprint with the current one and
+rebuilds automatically. The fingerprint covers the embedding model, the chunker
+version, `MAX_CHARS`, `OVERLAP`, and the name/size/mtime of every corpus file.
+
+It rebuilds automatically when:
+
+- `data/index/` does not exist;
+- `python -m boe_ingest` rewrites or adds a `.md` or `.index.jsonl`;
+- norms are added or removed and the corpus is re-ingested;
+- `AGENT_EMBEDDING_MODEL`, `MAX_CHARS`, `OVERLAP` or `CHUNKER_VERSION` changes;
+- the corpus files are copied or checked out with new mtimes.
+
+No rebuild is needed for:
+
+- changing the LLM, API mode, prompts or temperature;
+- changing `AGENT_TOP_K`, `k` or `norm_id`;
+- switching between CPU/GPU or local embeddings and the server, as long as the
+  model is the same;
+- tracing or CLI changes.
+
+```bash
+python -m agent info             # index status and whether it is up to date
+make index                       # build only if missing or stale
+python -m agent index --rebuild  # force a rebuild
+```
+
+If you change the chunking logic in `agent/corpus.py`, bump `CHUNKER_VERSION`
+so the fingerprint changes. If you change the embedding model, restart the
+embedding container with the same `AGENT_EMBEDDING_MODEL`; otherwise the index
+and query vectors come from different models.
 
 ## Tracing with Langfuse (local)
 
