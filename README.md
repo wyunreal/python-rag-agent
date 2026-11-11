@@ -16,7 +16,8 @@ Defined in [`config/norms.toml`](config/norms.toml), not in code.
 
 ## Setup
 
-Python 3.11+.
+Python 3.11+. Docker and Docker Compose are needed for the default embedding
+server; Langfuse is optional.
 
 ```bash
 make venv                 # create .venv
@@ -36,6 +37,30 @@ make format               # ruff format
 `make clean` removes the venv and refuses to delete a non-venv directory.
 `.venv/` is gitignored: it is build output, the `Makefile` is code.
 
+## Quick start (all local)
+
+The default path uses the persistent embedding server:
+
+```bash
+cp .env.example .env       # add OLLAMA_API_KEY
+python -m boe_ingest       # download and render data/corpus (first run)
+make embed-up              # required by the default .env
+make index                 # build data/index
+python -m agent ask "¿Cuál es el plazo máximo de detención preventiva?"
+```
+
+Optional Langfuse tracing:
+
+```bash
+make langfuse-up           # Langfuse UI on localhost:3000
+# uncomment LANGFUSE_* in .env
+python -m agent chat
+```
+
+If you prefer not to run Docker for embeddings, comment out
+`AGENT_EMBED_SERVER` in `.env`; the agent will load `bge-m3` inside the process
+(about 5 s in the first `ask`). Without Langfuse keys, tracing is disabled.
+
 ## Agent
 
 [`agent/`](agent/) is a ReAct agent built with LangChain's `create_agent`
@@ -52,17 +77,19 @@ answering and cites the norm, article and official BOE URL.
   `include=["reasoning.encrypted_content"]`, kept in the message history and
   sent back on later turns (including tool-call turns). Set
   `AGENT_API_MODE=chat_completions` to go back to `/v1/chat/completions`.
-- **Embeddings:** `BAAI/bge-m3`, run locally on CPU by default. Ollama Cloud
-  does not serve embedding models, and bge-m3 is strong on Spanish and
-  multilingual text. The first run downloads about 2 GB. Set
-  `AGENT_DEVICE=cuda` to use the GPU; if it runs out of memory, the embedder
-  falls back to CPU automatically.
+- **Embeddings:** `BAAI/bge-m3`. By default queries go to the persistent
+  embedding server in [`embed/`](embed/) (CPU). If `AGENT_EMBED_SERVER` is unset,
+  the model runs locally on CPU; set `AGENT_DEVICE=cuda` for the local path. The
+  first local run downloads about 2 GB. Ollama Cloud does not serve embedding
+  models, and bge-m3 is strong on Spanish and multilingual text.
 - **Vector store:** `data/index/` (`embeddings.npy` + `chunks.jsonl`). It is
   rebuilt automatically when the corpus, the embedding model or the chunking
   version changes.
 
 ```bash
 cp .env.example .env      # add OLLAMA_API_KEY from ollama.com/settings/keys
+python -m boe_ingest      # download and render data/corpus
+make embed-up             # embedding server enabled by default
 make index                # build data/index (or: python -m agent index)
 
 python -m agent ask "¿Cuál es el plazo máximo de detención preventiva?"
@@ -107,12 +134,13 @@ make langfuse-down     # stop; volumes are kept
 - Login: `admin@local.test` / `langfuse-local`
 - Project keys: `pk-lf-local` / `sk-lf-local`
 
-The agent reads these variables from `.env`:
+Uncomment these variables in `.env` after `make langfuse-up`:
 
 ```env
 LANGFUSE_PUBLIC_KEY=pk-lf-local
 LANGFUSE_SECRET_KEY=sk-lf-local
 LANGFUSE_BASE_URL=http://localhost:3000
+LANGFUSE_PROJECT_ID=local-project
 ```
 
 With the keys present, `ask` sends one trace per invocation and `chat` groups
@@ -143,18 +171,18 @@ make embed-logs
 make embed-down
 ```
 
-The service listens on `127.0.0.1:8765` and exposes `POST /embed`. The agent
-uses it when `AGENT_EMBED_SERVER` is set:
+The service listens on `127.0.0.1:8765` and exposes `POST /embed`.
+`.env.example` enables it by default:
 
 ```env
 AGENT_EMBED_SERVER=http://127.0.0.1:8765
 ```
 
-If `AGENT_EMBED_SERVER` is set and the container is down, `ask`, `chat` and
-`search` exit at startup with a clear error. Unset `AGENT_EMBED_SERVER` to use
-the local model instead. The container runs on CPU, reuses
-`${HOME}/.cache/huggingface`, and only serves query embeddings; index builds
-still run on the host.
+Run `make embed-up` before `ask`, `chat` or `search`. If the container is down,
+those commands exit at startup with a clear error. Comment out
+`AGENT_EMBED_SERVER` to load the model locally instead. The container runs on
+CPU, reuses `${HOME}/.cache/huggingface`, and only serves query embeddings;
+index builds still run on the host.
 
 ### Deploying in a cluster
 
