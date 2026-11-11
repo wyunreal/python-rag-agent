@@ -26,8 +26,15 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Lint
-        run: ruff check boe_ingest
+        run: ruff check boe_ingest agent tests
 
-      # Offline smoke test: reads the registry, never touches the network.
+      # Offline tests: synthetic corpus, never touch the network.
+      - name: Tests
+        run: pytest -q
+
+      # Offline smoke tests: read the registry and print agent config,
+      # never touch the network or the index.
       - name: Smoke test
-        run: python -m boe_ingest list
+        run: |
+          python -m boe_ingest list
+          python -m agent info

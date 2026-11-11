@@ -7,23 +7,36 @@ name = "python-rag-agent"
 version = "0.1.0"
 description = "RAG agent over Spanish consolidated legislation (BOE open data)"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "langchain>=1.0",
+    "langchain-openai>=1.0",
+    "langgraph>=1.0",
+    "numpy>=1.26",
+    "openai>=1.0",
+    "python-dotenv>=1.0",
+    "pyyaml>=6.0",
+    "sentence-transformers>=3.0",
+]
 
 # Development tools only: `pip install -e ".[dev]"`.
 # Kept out of `dependencies` so installing the package does not pull a linter.
 [project.optional-dependencies]
-dev = ["ruff>=0.6"]
+dev = ["ruff>=0.6", "pytest>=8.0"]
 
 [project.scripts]
 boe-ingest = "boe_ingest.cli:main"
+rag-agent = "agent.cli:main"
 
 [tool.setuptools]
-packages = ["boe_ingest"]
+packages = ["boe_ingest", "agent"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["boe_ingest"]
+src = ["boe_ingest", "agent", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "SIM", "UP"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["agent", "boe_ingest"]
