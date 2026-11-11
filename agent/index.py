@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -58,7 +59,6 @@ class Embedder:
     """
 
     def __init__(self, model_name: str, device: str | None = None) -> None:
-        from sentence_transformers import SentenceTransformer
         from transformers.utils import logging as transformers_logging
 
         # Model loading is noisy and not useful to the CLI user.
@@ -67,7 +67,41 @@ class Embedder:
         transformers_logging.disable_progress_bar()
 
         self.model_name = model_name
-        self._model = SentenceTransformer(model_name, device=device)
+        self._device = device or "cpu"
+        self._fallback_warned = False
+        self._lock = threading.Lock()
+        self._model = self._load(self._device)
+
+    def _warn_fallback(self) -> None:
+        if not self._fallback_warned:
+            logger.warning("CUDA out of memory; using CPU for embeddings.")
+            self._fallback_warned = True
+
+    def _load(self, device: str):
+        from sentence_transformers import SentenceTransformer
+
+        try:
+            return SentenceTransformer(self.model_name, device=device)
+        except RuntimeError as exc:
+            if device != "cpu" and "out of memory" in str(exc).lower():
+                self._warn_fallback()
+                self._device = "cpu"
+                return SentenceTransformer(self.model_name, device="cpu")
+            raise
+
+    def _encode(
+        self,
+        texts: list[str],
+        batch_size: int,
+        show_progress_bar: bool,
+    ) -> np.ndarray:
+        return self._model.encode(
+            texts,
+            batch_size=batch_size,
+            normalize_embeddings=True,
+            convert_to_numpy=True,
+            show_progress_bar=show_progress_bar,
+        )
 
     def encode(
         self,
@@ -75,14 +109,21 @@ class Embedder:
         batch_size: int = 32,
         show_progress_bar: bool = False,
     ) -> np.ndarray:
-        vectors = self._model.encode(
-            texts,
-            batch_size=batch_size,
-            normalize_embeddings=True,
-            convert_to_numpy=True,
-            show_progress_bar=show_progress_bar,
-        )
+        with self._lock:
+            try:
+                vectors = self._encode(texts, batch_size, show_progress_bar)
+            except RuntimeError as exc:
+                if self._device != "cpu" and "out of memory" in str(exc).lower():
+                    self._warn_fallback()
+                    self._device = "cpu"
+                    self._model = self._load("cpu")
+                    vectors = self._encode(texts, batch_size, show_progress_bar)
+                else:
+                    raise
         return np.asarray(vectors, dtype=np.float32)
+
+
+_EMBEDDER_LOCK = threading.Lock()
 
 
 @lru_cache(maxsize=2)
@@ -91,7 +132,9 @@ def _shared_embedder(model_name: str, device: str | None) -> Embedder:
 
 
 def get_embedder(settings: Settings) -> Embedder:
-    return _shared_embedder(settings.embedding_model, settings.device)
+    # ToolNode may run several search_corpus calls in parallel.
+    with _EMBEDDER_LOCK:
+        return _shared_embedder(settings.embedding_model, settings.device)
 
 
 class VectorIndex:

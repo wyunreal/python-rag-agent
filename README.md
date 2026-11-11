@@ -52,9 +52,11 @@ answering and cites the norm, article and official BOE URL.
   `include=["reasoning.encrypted_content"]`, kept in the message history and
   sent back on later turns (including tool-call turns). Set
   `AGENT_API_MODE=chat_completions` to go back to `/v1/chat/completions`.
-- **Embeddings:** `BAAI/bge-m3`, run locally. Ollama Cloud does not serve
-  embedding models, and bge-m3 is strong on Spanish and multilingual text.
-  The first run downloads about 2 GB; a GPU is used when available.
+- **Embeddings:** `BAAI/bge-m3`, run locally on CPU by default. Ollama Cloud
+  does not serve embedding models, and bge-m3 is strong on Spanish and
+  multilingual text. The first run downloads about 2 GB. Set
+  `AGENT_DEVICE=cuda` to use the GPU; if it runs out of memory, the embedder
+  falls back to CPU automatically.
 - **Vector store:** `data/index/` (`embeddings.npy` + `chunks.jsonl`). It is
   rebuilt automatically when the corpus, the embedding model or the chunking
   version changes.

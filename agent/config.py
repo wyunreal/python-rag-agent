@@ -27,6 +27,7 @@ DEFAULT_MODEL = "deepseek-v4.1-flash:1017"
 DEFAULT_EMBEDDING_MODEL = "BAAI/bge-m3"
 DEFAULT_API_MODE = "responses"
 API_MODES = {"responses", "chat_completions"}
+DEFAULT_DEVICE = "cpu"
 
 
 def _int(name: str, default: int) -> int:
@@ -82,7 +83,7 @@ class Settings:
             index_dir=_path("AGENT_INDEX_DIR", DEFAULT_INDEX_DIR),
             top_k=_int("AGENT_TOP_K", 5),
             batch_size=_int("AGENT_BATCH_SIZE", 32),
-            device=os.getenv("AGENT_DEVICE") or None,
+            device=os.getenv("AGENT_DEVICE", DEFAULT_DEVICE).strip() or DEFAULT_DEVICE,
         )
 
     def require_api_key(self) -> str:

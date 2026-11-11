@@ -34,3 +34,9 @@ def test_chat_completions_mode_is_available(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert model.use_responses_api is False
     assert model.include is None
+
+
+def test_empty_device_falls_back_to_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AGENT_DEVICE", "")
+
+    assert Settings.from_env().device == "cpu"

@@ -153,6 +153,7 @@ def _cmd_info(settings: Settings) -> int:
     print("Endpoint:", settings.base_url)
     print("API key:", "configurada" if settings.api_key else "NO configurada")
     print("Embeddings:", settings.embedding_model)
+    print("Embeddings device:", settings.device)
     print("Corpus:", settings.corpus_dir)
     print("Índice:", settings.index_dir)
 
