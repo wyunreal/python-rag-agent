@@ -81,13 +81,99 @@ How the pieces fit:
    heading hierarchy, keeps the enclosing book/title/chapter as metadata and
    only breaks long articles into overlapping pieces.
 2. [`agent/index.py`](agent/index.py) embeds the chunks, persists a numpy matrix
-   and loads it lazily. A fingerprint of the corpus files makes staleness cheap
-   to detect.
+   and keeps it in memory. A fingerprint of the corpus files makes staleness
+   cheap to detect; repeated tool calls avoid reading the files again. Query
+   embeddings are cached per process too, so asking the same question twice
+   skips the embedding model.
 3. [`agent/tools.py`](agent/tools.py) exposes `search_corpus`, which returns
    fragments with their article, section, validity date and URL.
 4. [`agent/agent.py`](agent/agent.py) builds the LangChain agent with the model,
    the tool and the legal system prompt in
    [`agent/prompts.py`](agent/prompts.py).
+
+## Tracing with Langfuse (local)
+
+[`langfuse/docker-compose.yml`](langfuse/docker-compose.yml) runs a local
+Langfuse v4 stack: web, worker, Postgres, ClickHouse, Redis and MinIO. It is
+intended for local development only and uses fixed credentials.
+
+```bash
+make langfuse-up       # first run pulls images
+make langfuse-logs     # optional
+make langfuse-down     # stop; volumes are kept
+```
+
+- UI: <http://localhost:3000>
+- Login: `admin@local.test` / `langfuse-local`
+- Project keys: `pk-lf-local` / `sk-lf-local`
+
+The agent reads these variables from `.env`:
+
+```env
+LANGFUSE_PUBLIC_KEY=pk-lf-local
+LANGFUSE_SECRET_KEY=sk-lf-local
+LANGFUSE_BASE_URL=http://localhost:3000
+```
+
+With the keys present, `ask` sends one trace per invocation and `chat` groups
+all turns of a conversation under one Langfuse session. Each run prints the
+trace URL; pass `--timings` to `ask` or `chat` for a console summary
+(`first_llm`, `tool_done`, `first_answer`, `total`). Inside a trace,
+`search_corpus` contains `retrieval` and its children `ensure_index`,
+`embed_query`, `vector_search` and `format_hits`, each with its own latency.
+Every model call also has an `llm_call` child whose input is the exact API
+payload (Responses or Chat Completions format) and whose output is the generated
+message with reasoning, tool calls and text.
+Set `LANGFUSE_TRACING_ENABLED=false` to disable tracing without removing the
+keys.
+
+The stack stores its data in Docker volumes. `make langfuse-down` keeps them;
+use `docker compose -f langfuse/docker-compose.yml down -v` to start from
+scratch. Do not expose port 3000 publicly with these credentials.
+
+## Persistent embedding server
+
+Loading `bge-m3` costs about 5 s per process: importing torch/transformers
+(~3.4 s) plus reading the weights (~1.5 s). [`embed/`](embed/) keeps the model
+warm in a Docker container so `ask` does not pay that cost every time.
+
+```bash
+make embed-up        # build and start; first build is slow
+make embed-logs
+make embed-down
+```
+
+The service listens on `127.0.0.1:8765` and exposes `POST /embed`. The agent
+uses it when `AGENT_EMBED_SERVER` is set:
+
+```env
+AGENT_EMBED_SERVER=http://127.0.0.1:8765
+```
+
+If `AGENT_EMBED_SERVER` is set and the container is down, `ask`, `chat` and
+`search` exit at startup with a clear error. Unset `AGENT_EMBED_SERVER` to use
+the local model instead. The container runs on CPU, reuses
+`${HOME}/.cache/huggingface`, and only serves query embeddings; index builds
+still run on the host.
+
+### Deploying in a cluster
+
+The agent reads service URLs from environment variables; nothing assumes
+`localhost`:
+
+```env
+LANGFUSE_BASE_URL=https://langfuse.example.com
+LANGFUSE_PROJECT_ID=<project-id>
+LANGFUSE_PUBLIC_KEY=...
+LANGFUSE_SECRET_KEY=...
+AGENT_EMBED_SERVER=http://embed-server:8765
+```
+
+The `langfuse/` and `embed/` compose files are local conveniences. In a cluster,
+point `AGENT_EMBED_SERVER` at the embedding Service and `LANGFUSE_BASE_URL` at
+the Langfuse ingress. For the Langfuse container itself, set `NEXTAUTH_URL` to
+its public URL; `LANGFUSE_PORT` and `EMBED_PORT` change the host port mappings
+when using Compose.
 
 ## Documentation
 

@@ -1,0 +1,31 @@
+name: python-rag-agent-embed
+
+services:
+  embed:
+    build:
+      context: ..
+      dockerfile: embed/Dockerfile
+    image: python-rag-agent-embed:local
+    restart: unless-stopped
+    user: "${UID:-1000}:${GID:-1000}"
+    ports:
+      - "${EMBED_BIND:-127.0.0.1}:${EMBED_PORT:-8765}:8765"
+    environment:
+      AGENT_EMBEDDING_MODEL: ${AGENT_EMBEDDING_MODEL:-BAAI/bge-m3}
+      AGENT_DEVICE: cpu
+      HF_HOME: /models
+      HOME: /tmp
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      HF_HUB_DISABLE_PROGRESS_BARS: "1"
+    volumes:
+      - ${HOME}/.cache/huggingface:/models
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health', timeout=2)"
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 600s

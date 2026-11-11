@@ -12,6 +12,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph.state import CompiledStateGraph
 
 from agent.config import Settings
+from agent.llm import TracedChatOpenAI
 from agent.prompts import build_system_prompt
 from agent.tools import make_tools
 
@@ -24,7 +25,7 @@ def build_model(settings: Settings) -> ChatOpenAI:
     sent. ``chat_completions`` keeps the classic ``/v1/chat/completions`` path.
     """
     use_responses = settings.api_mode == "responses"
-    return ChatOpenAI(
+    return TracedChatOpenAI(
         model=settings.model,
         base_url=settings.base_url,
         api_key=settings.require_api_key(),

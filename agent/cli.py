@@ -15,12 +15,29 @@ import argparse
 import logging
 import os
 import sys
+from time import perf_counter
 from typing import Any
+from uuid import uuid4
 
 from openai import OpenAIError
 
 from agent.config import Settings
-from agent.index import VectorIndex, build_index, corpus_fingerprint, format_hits, get_embedder
+from agent.index import (
+    VectorIndex,
+    build_index,
+    check_embed_server,
+    corpus_fingerprint,
+    embed_query,
+    ensure_index,
+    format_hits,
+)
+from agent.tracing import (
+    flush,
+    last_trace_id,
+    trace_config,
+    trace_url,
+    tracing_enabled,
+)
 
 COMMANDS = {"index", "ask", "chat", "search", "info"}
 
@@ -42,23 +59,41 @@ def _text(message: Any) -> str:
     return str(content)
 
 
-def _stream(agent: Any, messages: list) -> dict:
+def _stream(
+    agent: Any,
+    messages: list,
+    config: dict | None = None,
+    timings: bool = False,
+) -> dict:
     """Stream tokens to stdout and return the final graph state."""
-    from langchain_core.messages import AIMessageChunk
+    from langchain_core.messages import AIMessageChunk, ToolMessage
 
     answer = ""
     final: dict | None = None
+    started = perf_counter()
+    first_llm: float | None = None
+    first_tool: float | None = None
+    first_text: float | None = None
+
     for mode, payload in agent.stream(
         {"messages": messages},
+        config=config or {},
         stream_mode=["messages", "values"],
     ):
+        elapsed = perf_counter() - started
         if mode == "messages":
             chunk, _meta = payload
             if isinstance(chunk, AIMessageChunk):
+                if first_llm is None:
+                    first_llm = elapsed
                 piece = _text(chunk)
                 if piece:
+                    if first_text is None:
+                        first_text = elapsed
                     print(piece, end="", flush=True)
                     answer += piece
+            elif isinstance(chunk, ToolMessage) and first_tool is None:
+                first_tool = elapsed
         elif mode == "values":
             final = payload
 
@@ -70,13 +105,40 @@ def _stream(agent: Any, messages: list) -> dict:
 
     if final is None:
         final = {"messages": [*messages, {"role": "assistant", "content": answer}]}
+
+    if timings:
+        parts = []
+        if first_llm is not None:
+            parts.append(f"first_llm={first_llm:.2f}s")
+        if first_tool is not None:
+            parts.append(f"tool_done={first_tool:.2f}s")
+        if first_text is not None:
+            parts.append(f"first_answer={first_text:.2f}s")
+        parts.append(f"total={perf_counter() - started:.2f}s")
+        print(f"[timings] {' '.join(parts)}")
     return final
 
 
-def _invoke(agent: Any, messages: list) -> dict:
-    result = agent.invoke({"messages": messages})
+def _invoke(
+    agent: Any,
+    messages: list,
+    config: dict | None = None,
+    timings: bool = False,
+) -> dict:
+    started = perf_counter()
+    result = agent.invoke({"messages": messages}, config=config or {})
+    elapsed = perf_counter() - started
     print(_text(result["messages"][-1]))
+    if timings:
+        print(f"[timings] total={elapsed:.2f}s")
     return result
+
+
+def _print_trace(config: dict) -> None:
+    trace_id = last_trace_id(config)
+    if not trace_id:
+        return
+    print(f"Langfuse: {trace_url(trace_id) or trace_id}")
 
 
 def _cmd_index(args: argparse.Namespace, settings: Settings) -> int:
@@ -103,10 +165,9 @@ def _cmd_index(args: argparse.Namespace, settings: Settings) -> int:
 
 
 def _cmd_search(args: argparse.Namespace, settings: Settings) -> int:
-    from agent.index import ensure_index
-
+    check_embed_server()
     index = ensure_index(settings)
-    vector = get_embedder(settings).encode([args.query])[0]
+    vector = embed_query(settings, args.query)
     hits = index.search(vector, k=args.k, norm_id=args.norm)
     print(format_hits(hits))
     return 0 if hits else 1
@@ -115,36 +176,61 @@ def _cmd_search(args: argparse.Namespace, settings: Settings) -> int:
 def _cmd_ask(args: argparse.Namespace, settings: Settings) -> int:
     from agent.agent import build_agent
 
+    check_embed_server()
     agent = build_agent(settings)
     messages = [{"role": "user", "content": args.question}]
-    if args.no_stream:
-        _invoke(agent, messages)
-    else:
-        _stream(agent, messages)
+    config = trace_config(
+        session_id=f"ask-{uuid4().hex[:8]}",
+        trace_name="ask",
+        tags=["cli", settings.model],
+    )
+    try:
+        if args.no_stream:
+            _invoke(agent, messages, config, timings=args.timings)
+        else:
+            _stream(agent, messages, config, timings=args.timings)
+        _print_trace(config)
+    finally:
+        flush()
     return 0
 
 
 def _cmd_chat(args: argparse.Namespace, settings: Settings) -> int:
     from agent.agent import build_agent
 
+    check_embed_server()
     agent = build_agent(settings)
     history: list = []
+    session_id = f"chat-{uuid4().hex[:8]}"
+    config = trace_config(
+        session_id=session_id,
+        trace_name="chat",
+        tags=["cli", settings.model],
+    )
+    if tracing_enabled():
+        base_url = os.getenv("LANGFUSE_BASE_URL", "")
+        suffix = f" · {base_url}" if base_url else ""
+        print(f"Langfuse: sesión {session_id}{suffix}")
     print("Agente jurídico (escribe /salir para terminar).")
-    while True:
-        try:
-            question = input("\nTú: ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print()
-            return 0
-        if not question:
-            continue
-        if question.casefold() in {"/salir", "/exit", "/q"}:
-            return 0
+    try:
+        while True:
+            try:
+                question = input("\nTú: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return 0
+            if not question:
+                continue
+            if question.casefold() in {"/salir", "/exit", "/q"}:
+                return 0
 
-        messages = [*history, {"role": "user", "content": question}]
-        print("Agente: ", end="", flush=True)
-        final = _stream(agent, messages)
-        history = final["messages"]
+            messages = [*history, {"role": "user", "content": question}]
+            print("Agente: ", end="", flush=True)
+            final = _stream(agent, messages, config, timings=args.timings)
+            history = final["messages"]
+            _print_trace(config)
+    finally:
+        flush()
 
 
 def _cmd_info(settings: Settings) -> int:
@@ -153,7 +239,12 @@ def _cmd_info(settings: Settings) -> int:
     print("Endpoint:", settings.base_url)
     print("API key:", "configurada" if settings.api_key else "NO configurada")
     print("Embeddings:", settings.embedding_model)
-    print("Embeddings device:", settings.device)
+    print("Embeddings device (local):", settings.device)
+    print("Embedding server:", os.getenv("AGENT_EMBED_SERVER") or "local")
+    if tracing_enabled():
+        print("Tracing:", f"langfuse {os.getenv('LANGFUSE_BASE_URL', '(cloud)')}")
+    else:
+        print("Tracing: disabled")
     print("Corpus:", settings.corpus_dir)
     print("Índice:", settings.index_dir)
 
@@ -198,9 +289,11 @@ def _parser() -> argparse.ArgumentParser:
     ask = sub.add_parser("ask", help="responde una pregunta")
     ask.add_argument("question", help="pregunta en lenguaje natural")
     ask.add_argument("--no-stream", action="store_true", help="espera la respuesta completa")
+    ask.add_argument("--timings", action="store_true", help="muestra tiempos por fase")
     ask.set_defaults(handler=_cmd_ask)
 
     chat = sub.add_parser("chat", help="conversación multi-turno")
+    chat.add_argument("--timings", action="store_true", help="muestra tiempos por fase")
     chat.set_defaults(handler=_cmd_chat)
 
     info = sub.add_parser("info", help="configuración y estado del índice")

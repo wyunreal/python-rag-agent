@@ -10,7 +10,9 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import threading
+import urllib.request
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -81,13 +83,16 @@ class Embedder:
         from sentence_transformers import SentenceTransformer
 
         try:
-            return SentenceTransformer(self.model_name, device=device)
+            return SentenceTransformer(self.model_name, device=device, local_files_only=True)
         except RuntimeError as exc:
             if device != "cpu" and "out of memory" in str(exc).lower():
                 self._warn_fallback()
                 self._device = "cpu"
-                return SentenceTransformer(self.model_name, device="cpu")
+                return SentenceTransformer(self.model_name, device="cpu", local_files_only=True)
             raise
+        except (OSError, ValueError):
+            logger.info("Embedding model not cached; downloading %s.", self.model_name)
+            return SentenceTransformer(self.model_name, device=device)
 
     def _encode(
         self,
@@ -135,6 +140,66 @@ def get_embedder(settings: Settings) -> Embedder:
     # ToolNode may run several search_corpus calls in parallel.
     with _EMBEDDER_LOCK:
         return _shared_embedder(settings.embedding_model, settings.device)
+
+
+@lru_cache(maxsize=1024)
+def _cached_query_vector(model_name: str, device: str | None, text: str) -> np.ndarray:
+    return _shared_embedder(model_name, device).encode([text])[0]
+
+
+@lru_cache(maxsize=1024)
+def _cached_server_vector(base_url: str, model_name: str, text: str) -> np.ndarray:
+    request = urllib.request.Request(
+        f"{base_url.rstrip('/')}/embed",
+        data=json.dumps({"texts": [text]}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        payload = json.load(response)
+    vectors = np.asarray(payload["vectors"], dtype=np.float32)
+    if vectors.ndim != 2 or vectors.shape[0] != 1:
+        raise ValueError("unexpected response from embedding server")
+    return vectors[0]
+
+
+_QUERY_LOCK = threading.Lock()
+
+
+def check_embed_server() -> None:
+    """Fail fast when a configured embedding server is not reachable."""
+    server = os.getenv("AGENT_EMBED_SERVER", "").strip()
+    if not server:
+        return
+
+    health_url = f"{server.rstrip('/')}/health"
+    try:
+        with urllib.request.urlopen(health_url, timeout=2) as response:
+            if response.status != 200:
+                raise RuntimeError(f"HTTP {response.status}")
+    except Exception as exc:  # noqa: BLE001 - wrap any connection error
+        raise RuntimeError(
+            f"El servidor de embeddings {server} no responde. "
+            "Arráncalo con `make embed-up` o quita AGENT_EMBED_SERVER para usar "
+            "el modelo local."
+        ) from exc
+
+
+def embed_query(settings: Settings, text: str) -> np.ndarray:
+    """Embed a query via the persistent server, or locally when no server is set."""
+    server = os.getenv("AGENT_EMBED_SERVER", "").strip()
+    if server:
+        with _QUERY_LOCK:
+            try:
+                return _cached_server_vector(server, settings.embedding_model, text)
+            except Exception as exc:  # noqa: BLE001 - no silent fallback when configured
+                raise RuntimeError(
+                    f"El servidor de embeddings {server} no responde. "
+                    "Arráncalo con `make embed-up` o quita AGENT_EMBED_SERVER para "
+                    "usar el modelo local."
+                ) from exc
+    with _QUERY_LOCK:
+        return _cached_query_vector(settings.embedding_model, settings.device, text)
 
 
 class VectorIndex:
@@ -213,19 +278,38 @@ def build_index(settings: Settings, show_progress_bar: bool = True) -> VectorInd
     return index
 
 
+_INDEX_CACHE: dict[Path, tuple[str, VectorIndex]] = {}
+_INDEX_LOCK = threading.Lock()
+
+
 def ensure_index(settings: Settings, force: bool = False) -> VectorIndex:
-    """Load the index, rebuilding it when missing or stale."""
-    if force:
-        return build_index(settings)
-    try:
-        index = VectorIndex.load(settings.index_dir)
-    except FileNotFoundError:
-        logger.info("No existe índice; construyéndolo por primera vez.")
-        return build_index(settings)
-    if index.meta.get("fingerprint") != corpus_fingerprint(settings):
-        logger.info("El corpus o el modelo han cambiado; reconstruyendo el índice.")
-        return build_index(settings)
-    return index
+    """Return the index, rebuilding it when missing or stale.
+
+    The loaded index is cached in memory per index directory. A cheap
+    fingerprint check still runs on every call, so a corpus change triggers a
+    rebuild while repeated tool calls avoid reading the files again.
+    """
+    fingerprint = corpus_fingerprint(settings)
+    with _INDEX_LOCK:
+        cached = _INDEX_CACHE.get(settings.index_dir)
+        if not force and cached is not None and cached[0] == fingerprint:
+            return cached[1]
+
+        if force:
+            index = build_index(settings)
+        else:
+            try:
+                index = VectorIndex.load(settings.index_dir)
+            except FileNotFoundError:
+                logger.info("No existe índice; construyéndolo por primera vez.")
+                index = build_index(settings)
+            else:
+                if index.meta.get("fingerprint") != fingerprint:
+                    logger.info("El corpus o el modelo han cambiado; reconstruyendo el índice.")
+                    index = build_index(settings)
+
+        _INDEX_CACHE[settings.index_dir] = (fingerprint, index)
+        return index
 
 
 def format_hits(hits: list[SearchHit]) -> str:
