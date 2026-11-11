@@ -6,10 +6,12 @@
 VENV   ?= .venv
 PYTHON ?= python3
 PY     := $(VENV)/bin/python
+LIMIT  ?= 15
 COMPOSE := docker compose -f langfuse/docker-compose.yml --env-file langfuse/.env
 EMBED_COMPOSE := docker compose -f embed/docker-compose.yml --env-file .env
 
 .PHONY: help venv clean recreate list index info lint format \
+        boe-ingest boe-search boe-fetch boe-add \
         langfuse-up langfuse-down langfuse-logs \
         embed-up embed-down embed-logs
 
@@ -18,6 +20,10 @@ help:
 	@echo "make clean         remove $(VENV)"
 	@echo "make recreate      remove and recreate $(VENV)"
 	@echo "make list          show the registered corpus"
+	@echo "make boe-ingest    fetch and render every registered norm"
+	@echo "make boe-search    find a BOE id: make boe-search Q=\"penal\" ALL=1"
+	@echo "make boe-fetch     fetch one norm: make boe-fetch ID=BOE-A-..."
+	@echo "make boe-add       add matches: make boe-add Q=\"vivienda\" TAG=vivienda ALL=1"
 	@echo "make index         build the agent embedding index"
 	@echo "make info          show agent configuration and index status"
 	@echo "make lint          run ruff over boe_ingest, agent and tests"
@@ -50,6 +56,21 @@ recreate: clean venv
 
 list: venv
 	$(PY) -m boe_ingest list
+
+boe-ingest: venv
+	$(PY) -m boe_ingest
+
+boe-search: venv
+	@test -n "$(Q)" || { echo 'Usage: make boe-search Q="Código Penal" LIMIT=127' >&2; exit 1; }
+	$(PY) -m boe_ingest search "$(Q)" $(if $(ALL),--limit 100000,--limit "$(LIMIT)")
+
+boe-fetch: venv
+	@test -n "$(ID)" || { echo 'Usage: make boe-fetch ID="BOE-A-1978-31229"' >&2; exit 1; }
+	$(PY) -m boe_ingest "$(ID)"
+
+boe-add: venv
+	@test -n "$(Q)" || { echo 'Usage: make boe-add Q="vivienda" TAG=vivienda ALL=1' >&2; exit 1; }
+	$(PY) -m boe_ingest add "$(Q)" --limit "$(LIMIT)" $(if $(TAG),--tag "$(TAG)") $(if $(ALL),--all)
 
 index: venv
 	$(PY) -m agent index

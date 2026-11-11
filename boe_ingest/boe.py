@@ -19,10 +19,7 @@ API_ROOT = "https://www.boe.es/datosabiertos/api/legislacion-consolidada"
 CATALOGUE_URL = API_ROOT
 RESOURCE_ROOT = f"{API_ROOT}/id"
 
-USER_AGENT = (
-    "python-rag-agent/0.1 "
-    "(BOE open-data ingestion; https://www.boe.es/datosabiertos/)"
-)
+USER_AGENT = "python-rag-agent/0.1 (BOE open-data ingestion; https://www.boe.es/datosabiertos/)"
 
 TIMEOUT_SECONDS = 60
 MAX_ATTEMPTS = 3

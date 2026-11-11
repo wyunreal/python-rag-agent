@@ -8,6 +8,22 @@ and answers questions with a ReAct agent built on LangChain.
 
 Defined in [`config/norms.toml`](config/norms.toml), not in code.
 
+Find a norm's identifier with `make boe-search Q="Código Penal"` and fetch or
+re-render one with `make boe-fetch ID="BOE-A-1995-25444"`. `search` shows 15
+matches by default; use `LIMIT=127` or `ALL=1` to see more.
+
+Add every match in one go:
+
+```bash
+python -m boe_ingest add "vivienda" --all --tag vivienda
+# or: make boe-add Q="vivienda" TAG=vivienda ALL=1
+make boe-ingest          # fetch and render the new norms
+make index               # rebuild the embedding index
+```
+
+`add` skips identifiers already registered. Use `--limit N` instead of `--all`,
+`--active-only` to skip exhausted norms, or `--dry-run` to preview the TOML.
+
 | Document | BOE ID | Tag |
 |---|---|---|
 | Constitución Española | `BOE-A-1978-31229` | `constitucional` |
@@ -43,7 +59,7 @@ The default path uses the persistent embedding server:
 
 ```bash
 cp .env.example .env       # add OLLAMA_API_KEY
-python -m boe_ingest       # download and render data/corpus (first run)
+make boe-ingest           # download and render data/corpus (first run)
 make embed-up              # required by the default .env
 make index                 # build data/index
 python -m agent ask "¿Cuál es el plazo máximo de detención preventiva?"
@@ -88,7 +104,7 @@ answering and cites the norm, article and official BOE URL.
 
 ```bash
 cp .env.example .env      # add OLLAMA_API_KEY from ollama.com/settings/keys
-python -m boe_ingest      # download and render data/corpus
+make boe-ingest           # download and render data/corpus
 make embed-up             # embedding server enabled by default
 make index                # build data/index (or: python -m agent index)
 
@@ -127,7 +143,7 @@ version, `MAX_CHARS`, `OVERLAP`, and the name/size/mtime of every corpus file.
 It rebuilds automatically when:
 
 - `data/index/` does not exist;
-- `python -m boe_ingest` rewrites or adds a `.md` or `.index.jsonl`;
+- `make boe-ingest` rewrites or adds a `.md` or `.index.jsonl`;
 - norms are added or removed and the corpus is re-ingested;
 - `AGENT_EMBEDDING_MODEL`, `MAX_CHARS`, `OVERLAP` or `CHUNKER_VERSION` changes;
 - the corpus files are copied or checked out with new mtimes.

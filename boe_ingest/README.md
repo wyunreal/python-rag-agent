@@ -16,6 +16,7 @@ Part of [python-rag-agent](../README.md).
 | `python -m boe_ingest --as-of 1990-01-01` | render the law in force on a date |
 | `python -m boe_ingest list` | registry and local status |
 | `python -m boe_ingest search "<text>"` | find identifiers |
+| `python -m boe_ingest add "<text>" [--all] [--tag TAG]` | append matching norms to the registry |
 
 ## Adding a norm
 
@@ -26,6 +27,15 @@ python -m boe_ingest search "estatuto de los trabajadores"
 Paste the `[[norm]]` snippet it prints into `config/norms.toml`, then run
 `python -m boe_ingest`. Only the new norm hits the network; the rest re-render
 from cache.
+
+To add every match at once:
+
+```bash
+python -m boe_ingest add "vivienda" --all --tag vivienda
+```
+
+`add` skips IDs already registered, accepts `--limit N`, `--active-only` and
+`--dry-run`, and appends the `[[norm]]` blocks to the registry.
 
 To try one without registering it, pass the ID directly — its manifest entry
 records `registered: false`. To remove a norm, delete its `[[norm]]` table.

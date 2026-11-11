@@ -20,12 +20,8 @@ REUSE_NOTICE = (
 # condition fourth): adaptations must cite "Basado en datos de..." and link
 # to boe.es, and must identify the modifications made.
 BOE_URL = "https://www.boe.es"
-ATTRIBUTION_PLAIN = (
-    "Basado en datos de la Agencia Estatal Boletín Oficial del Estado"
-)
-ATTRIBUTION = (
-    f"Basado en datos de la [Agencia Estatal Boletín Oficial del Estado]({BOE_URL})."
-)
+ATTRIBUTION_PLAIN = "Basado en datos de la Agencia Estatal Boletín Oficial del Estado"
+ATTRIBUTION = f"Basado en datos de la [Agencia Estatal Boletín Oficial del Estado]({BOE_URL})."
 
 _WHITESPACE = re.compile(r"\s+")
 
@@ -84,9 +80,7 @@ def _applicable_version(block: ET.Element, as_of: str) -> ET.Element | None:
         return None
 
     in_force = [
-        version
-        for version in versions
-        if (version.get("fecha_vigencia") or "00000000") <= as_of
+        version for version in versions if (version.get("fecha_vigencia") or "00000000") <= as_of
     ]
     if not in_force:
         return None
@@ -387,9 +381,7 @@ def render_document(
                 "source_last_updated": meta["source_last_updated"],
                 "amending_norm": amending,
                 "amending_norm_url": (
-                    f"https://www.boe.es/buscar/act.php?id={amending}"
-                    if amending
-                    else ""
+                    f"https://www.boe.es/buscar/act.php?id={amending}" if amending else ""
                 ),
             }
         )
@@ -402,14 +394,17 @@ def render_document(
         "blocks_with_future_amendment": len(amended_ids),
     }
 
-    document = "\n\n".join(
-        [
-            _front_matter(front),
-            quote,
-            f"# {meta['title']}",
-            *body,
-        ]
-    ).rstrip() + "\n"
+    document = (
+        "\n\n".join(
+            [
+                _front_matter(front),
+                quote,
+                f"# {meta['title']}",
+                *body,
+            ]
+        ).rstrip()
+        + "\n"
+    )
 
     stats: dict[str, object] = {
         "blocks_total": len(blocks),

@@ -21,6 +21,7 @@ from xml.etree import ElementTree as ET
 from boe_ingest.boe import (
     RESOURCE_ROOT,
     BOEError,
+    CatalogueEntry,
     Resource,
     data_of,
     fetch,
@@ -49,15 +50,11 @@ LEGAL_BASIS = (
     "objeto de propiedad intelectual"
 )
 REUSE_CONDITIONS = (
-    "Condiciones de reutilización de la Agencia Estatal BOE "
-    "(Resolución de 27 de junio de 2024)"
+    "Condiciones de reutilización de la Agencia Estatal BOE (Resolución de 27 de junio de 2024)"
 )
-TRANSFORMATION = (
-    "XML to Markdown; bloques derogados y no vigentes omitidos; "
-    "redacción sin alterar"
-)
+TRANSFORMATION = "XML to Markdown; bloques derogados y no vigentes omitidos; redacción sin alterar"
 
-COMMANDS = {"fetch", "search", "list"}
+COMMANDS = {"fetch", "search", "add", "list"}
 
 
 # --------------------------------------------------------------------------- io
@@ -96,9 +93,7 @@ def _fold(value: str) -> str:
 # ------------------------------------------------------------------------- ingest
 
 
-def _metadata(
-    data: ET.Element, norm: Norm, *, registered: bool, as_of: str
-) -> dict[str, object]:
+def _metadata(data: ET.Element, norm: Norm, *, registered: bool, as_of: str) -> dict[str, object]:
     status = _text_of(data, "metadatos/estado_consolidacion")
     return {
         "schema_version": SCHEMA_VERSION,
@@ -122,9 +117,7 @@ def _metadata(
         "transformation": TRANSFORMATION,
         # The reference date is the law's, not the document's.
         "reference_date": iso_date(as_of),
-        "source_last_updated": iso_timestamp(
-            _text_of(data, "metadatos/fecha_actualizacion")
-        ),
+        "source_last_updated": iso_timestamp(_text_of(data, "metadatos/fecha_actualizacion")),
         "disposition_date": iso_date(_text_of(data, "metadatos/fecha_disposicion")),
         "publication_date": iso_date(_text_of(data, "metadatos/fecha_publicacion")),
         "in_force_date": iso_date(_text_of(data, "metadatos/fecha_vigencia")),
@@ -174,10 +167,7 @@ def process(
 
     index_path = corpus_dir / f"{norm.id}.index.jsonl"
     index_payload = (
-        "\n".join(
-            json.dumps(entry, ensure_ascii=False, sort_keys=True)
-            for entry in rendered.index
-        )
+        "\n".join(json.dumps(entry, ensure_ascii=False, sort_keys=True) for entry in rendered.index)
         + "\n"
     )
     _write_atomic(index_path, index_payload.encode("utf-8"))
@@ -241,8 +231,7 @@ def _upsert_manifest(path: Path, entries: list[dict[str, object]]) -> None:
     existing = _load_manifest(path)
     existing.update({str(entry["id"]): entry for entry in entries})
     payload = "\n".join(
-        json.dumps(existing[key], ensure_ascii=False, sort_keys=True)
-        for key in sorted(existing)
+        json.dumps(existing[key], ensure_ascii=False, sort_keys=True) for key in sorted(existing)
     )
     _write_atomic(path, (payload + "\n").encode("utf-8"))
 
@@ -324,9 +313,7 @@ def cmd_fetch(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
             )
         in_force_date = entry.get("in_force_date")
         if in_force_date and in_force_date > iso_date(as_of):
-            print(
-                f"  warning: the norm itself is not in force until {in_force_date}"
-            )
+            print(f"  warning: the norm itself is not in force until {in_force_date}")
 
         entries.append(entry)
 
@@ -341,40 +328,49 @@ def cmd_fetch(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     return 0
 
 
-def cmd_search(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
-    catalogue_path = args.data_dir / "catalogue.xml"
-    # The catalogue is ~11 MB and changes slowly; caching keeps `search` instant.
-    if catalogue_path.exists() and not args.refresh_catalogue:
+def _catalogue_entries(data_dir: Path, refresh: bool = False) -> list[CatalogueEntry]:
+    catalogue_path = data_dir / "catalogue.xml"
+    # The catalogue is ~11 MB and changes slowly; caching keeps commands instant.
+    if catalogue_path.exists() and not refresh:
         payload = catalogue_path.read_bytes()
     else:
         payload = fetch_catalogue()
         _write_atomic(catalogue_path, payload)
+    return parse_catalogue(payload)
 
-    entries = parse_catalogue(payload)
-    needle = _fold(args.query)
 
+def _catalogue_sort_key(entry: CatalogueEntry) -> tuple[int, int, int]:
+    """Prefer the norm itself over laws that merely amend it.
+
+    Heuristic, deliberately simple: norms whose validity is exhausted go last,
+    amending laws ("... por la que se modifica ...") next, and among the rest the
+    shortest title wins, because that is usually the code itself rather than a
+    statute about it.
+    """
+    folded = _fold(entry.title)
+    published = int(entry.publication_date) if entry.publication_date.isdigit() else 0
+    penalty = 0
+    if entry.exhausted:
+        penalty += 1000
+    if "modifica" in folded:
+        penalty += 200
+    return (penalty, len(folded), -published)
+
+
+def _catalogue_matches(
+    entries: list[CatalogueEntry], query: str, *, active_only: bool
+) -> list[CatalogueEntry]:
+    needle = _fold(query)
     matches = [entry for entry in entries if needle in _fold(entry.title)]
-    if args.active_only:
+    if active_only:
         matches = [entry for entry in matches if not entry.exhausted]
+    matches.sort(key=_catalogue_sort_key)
+    return matches
 
-    def sort_key(entry) -> tuple[int, int, int]:
-        """Prefer the norm itself over laws that merely amend it.
 
-        Heuristic, deliberately simple: norms whose validity is exhausted go
-        last, amending laws ("... por la que se modifica ...") next, and among
-        the rest the shortest title wins, because that is usually the code
-        itself rather than a statute about it.
-        """
-        folded = _fold(entry.title)
-        published = int(entry.publication_date) if entry.publication_date.isdigit() else 0
-        penalty = 0
-        if entry.exhausted:
-            penalty += 1000
-        if "modifica" in folded:
-            penalty += 200
-        return (penalty, len(folded), -published)
-
-    matches.sort(key=sort_key)
+def cmd_search(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    entries = _catalogue_entries(args.data_dir, args.refresh_catalogue)
+    matches = _catalogue_matches(entries, args.query, active_only=args.active_only)
     shown = matches[: args.limit]
 
     print(f'{len(matches)} match(es) for "{args.query}" in {len(entries):,} norms\n')
@@ -397,6 +393,46 @@ def cmd_search(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int
             tags=(_fold(args.query).split()[0],),
         ).to_toml()
     )
+    return 0
+
+
+def cmd_add(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    entries = _catalogue_entries(args.data_dir, args.refresh_catalogue)
+    matches = _catalogue_matches(entries, args.query, active_only=args.active_only)
+    if not matches:
+        print(f'No matches for "{args.query}".')
+        return 0
+
+    try:
+        existing = load_registry(args.registry)
+    except RegistryError as exc:
+        parser.error(str(exc))
+
+    registered = {norm.id for norm in existing}
+    selected = [entry for entry in matches if entry.id not in registered]
+    if not args.all:
+        selected = selected[: args.limit]
+    if not selected:
+        print(f"All {len(matches)} match(es) are already registered.")
+        return 0
+
+    words = _fold(args.query).split()
+    tag = args.tag or (words[0] if words else "imported")
+    norms = [Norm(id=entry.id, title=entry.title, tags=(tag,)) for entry in selected]
+    blocks = "\n\n".join(norm.to_toml() for norm in norms)
+
+    print(f"{len(matches)} match(es); {len(selected)} new; tag={tag!r}")
+    if args.dry_run:
+        print()
+        print(blocks)
+        print("\nDry run: registry not modified.")
+        return 0
+
+    current = args.registry.read_text("utf-8").rstrip()
+    payload = f"{current}\n\n{blocks}\n" if current else f"{blocks}\n"
+    _write_atomic(args.registry, payload.encode("utf-8"))
+    print(f"Appended {len(norms)} norm(s) to {args.registry}.")
+    print("Next: python -m boe_ingest")
     return 0
 
 
@@ -440,9 +476,7 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_parser.add_argument(
         "ids", nargs="*", help="identifiers (default: everything in the registry)"
     )
-    fetch_parser.add_argument(
-        "--refresh", action="store_true", help="re-download raw XML"
-    )
+    fetch_parser.add_argument("--refresh", action="store_true", help="re-download raw XML")
     fetch_parser.add_argument(
         "--as-of",
         type=_parse_day,
@@ -470,6 +504,28 @@ def build_parser() -> argparse.ArgumentParser:
         "--data-dir", type=Path, default=DEFAULT_DATA_DIR, help="cache directory"
     )
     search_parser.set_defaults(handler=cmd_search)
+
+    add_parser = subparsers.add_parser("add", help="append matching norms to the registry")
+    add_parser.add_argument("query", help="words to look for in titles")
+    add_parser.add_argument("--limit", type=int, default=15, help="maximum new norms (default: 15)")
+    add_parser.add_argument("--all", action="store_true", help="add every match, ignoring --limit")
+    add_parser.add_argument(
+        "--tag", help="tag for the new norms (default: first word of the query)"
+    )
+    add_parser.add_argument(
+        "--active-only", action="store_true", help="skip norms whose validity is exhausted"
+    )
+    add_parser.add_argument(
+        "--refresh-catalogue", action="store_true", help="re-download the catalogue"
+    )
+    add_parser.add_argument(
+        "--dry-run", action="store_true", help="print the TOML without writing it"
+    )
+    add_parser.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY, help="registry file")
+    add_parser.add_argument(
+        "--data-dir", type=Path, default=DEFAULT_DATA_DIR, help="cache directory"
+    )
+    add_parser.set_defaults(handler=cmd_add)
 
     list_parser = subparsers.add_parser("list", help="show registry and local status")
     list_parser.add_argument(

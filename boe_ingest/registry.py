@@ -6,6 +6,7 @@ ingest code never hardcodes identifiers, so adding a norm is a data change.
 
 from __future__ import annotations
 
+import json
 import re
 import tomllib
 from dataclasses import dataclass
@@ -26,8 +27,7 @@ def validated_id(value: str) -> str:
     candidate = value.strip()
     if not _ID_PATTERN.fullmatch(candidate):
         raise RegistryError(
-            f"invalid norm identifier {value!r}; expected a form such as "
-            "BOE-A-1978-31229"
+            f"invalid norm identifier {value!r}; expected a form such as BOE-A-1978-31229"
         )
     return candidate
 
@@ -40,12 +40,12 @@ class Norm:
     notes: str = ""
 
     def to_toml(self) -> str:
-        tags = ", ".join(f'"{tag}"' for tag in self.tags)
+        tags = ", ".join(json.dumps(tag, ensure_ascii=False) for tag in self.tags)
         return "\n".join(
             [
                 "[[norm]]",
-                f'id = "{self.id}"',
-                f'title = "{self.title}"',
+                f"id = {json.dumps(self.id)}",
+                f"title = {json.dumps(self.title, ensure_ascii=False)}",
                 f"tags = [{tags}]",
             ]
         )
@@ -74,9 +74,7 @@ def load(path: Path) -> list[Norm]:
         norm_id = validated_id(str(entry.get("id", "")))
         title = str(entry.get("title", "")).strip()
         if not norm_id or not title:
-            raise RegistryError(
-                f"{path}: [[norm]] #{position} needs both 'id' and 'title'"
-            )
+            raise RegistryError(f"{path}: [[norm]] #{position} needs both 'id' and 'title'")
         if norm_id in seen:
             raise RegistryError(f"{path}: duplicate id {norm_id}")
         seen.add(norm_id)
