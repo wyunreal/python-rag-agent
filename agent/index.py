@@ -315,13 +315,13 @@ def ensure_index(settings: Settings, force: bool = False) -> VectorIndex:
 def format_hits(hits: list[SearchHit]) -> str:
     """Render results for the LLM, with enough metadata to cite them."""
     if not hits:
-        return "No se han encontrado fragmentos para esa consulta."
+        return "No fragments found for that query."
 
     lines: list[str] = []
     for position, hit in enumerate(hits, start=1):
         chunk = hit.chunk
         context = f"{chunk.section} · " if chunk.section else ""
-        validity = f" · vigencia {chunk.in_force}" if chunk.in_force else ""
+        validity = f" · in force {chunk.in_force}" if chunk.in_force else ""
         lines.append(
             f"[{position}] {chunk.label()}\n"
             f"{context}{chunk.norm_id}{validity}\n"

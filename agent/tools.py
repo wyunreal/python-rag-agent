@@ -18,19 +18,20 @@ def make_tools(settings: Settings) -> list[BaseTool]:
         k: int = settings.top_k,
         norm_id: str | None = None,
     ) -> str:
-        """Busca preceptos en el corpus de legislación española consolidada (BOE).
+        """Search the consolidated Spanish legislation corpus (BOE).
 
-        Devuelve los fragmentos más relevantes con su norma, artículo, fecha de
-        vigencia y URL oficial. Úsala siempre que necesites el texto legal antes
-        de responder.
+        Returns the most relevant provisions with their norm, article, validity
+        date and official URL. Use it whenever you need the legal text before
+        answering.
 
         Args:
-            query: consulta en lenguaje natural, por ejemplo "plazo de detención
-                preventiva" o "requisitos para contraer matrimonio".
-            k: número de fragmentos a recuperar (por defecto 5).
-            norm_id: filtra por una norma concreta, por ejemplo
-                "BOE-A-1978-31229" para la Constitución. Déjalo vacío para
-                buscar en todo el corpus.
+            query: natural-language query, for example "maximum pretrial
+                detention period" or "requirements to marry". Spanish queries
+                work best for this corpus.
+            k: number of fragments to retrieve (default 5).
+            norm_id: restrict the search to one norm, for example
+                "BOE-A-1978-31229" for the Constitution. Leave empty to search
+                the whole corpus.
         """
         with span(
             "retrieval",
