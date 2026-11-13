@@ -247,46 +247,53 @@ def _cmd_chat(args: argparse.Namespace, settings: Settings) -> int:
     agent = build_agent(settings)
     history: list = []
     session_id = f"chat-{uuid4().hex[:8]}"
+    if tracing_enabled():
+        base_url = os.getenv("LANGFUSE_BASE_URL", "")
+        suffix = f" · {base_url}" if base_url else ""
+        print(f"Langfuse: sesión {session_id}{suffix}")
+    print("Agente jurídico (escribe /salir para terminar).")
+    turn = 0
     try:
-        with trace_root(
-            "chat",
-            session_id=session_id,
-            tags=["cli", settings.model],
-            input_data={"session_id": session_id},
-        ) as trace_context:
-            root_trace_id = trace_context["trace_id"] if trace_context else None
-            config = trace_config(
-                session_id=session_id,
-                trace_name="chat",
-                tags=["cli", settings.model],
-                trace_context=trace_context,
-            )
-            if tracing_enabled():
-                base_url = os.getenv("LANGFUSE_BASE_URL", "")
-                suffix = f" · {base_url}" if base_url else ""
-                print(f"Langfuse: sesión {session_id}{suffix}")
-            print("Agente jurídico (escribe /salir para terminar).")
-            while True:
-                try:
-                    question = input("\nTú: ").strip()
-                except (EOFError, KeyboardInterrupt):
-                    print()
-                    return 0
-                if not question:
-                    continue
-                if question.casefold() in {"/salir", "/exit", "/q"}:
-                    return 0
+        while True:
+            try:
+                question = input("\nTú: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return 0
+            if not question:
+                continue
+            if question.casefold() in {"/salir", "/exit", "/q"}:
+                return 0
 
-                verdict = _guardrail(question, history)
-                if verdict is not None and not verdict.allowed:
-                    print(f"Agente: {verdict.reason}")
-                    continue
+            turn += 1
+            trace_name = f"chat turn {turn}"
+            root_trace_id: str | None = None
+            try:
+                with trace_root(
+                    trace_name,
+                    session_id=session_id,
+                    tags=["cli", settings.model],
+                    input_data={"turn": turn, "message": question},
+                ) as trace_context:
+                    root_trace_id = trace_context["trace_id"] if trace_context else None
+                    config = trace_config(
+                        session_id=session_id,
+                        trace_name=trace_name,
+                        tags=["cli", settings.model],
+                        trace_context=trace_context,
+                    )
+                    verdict = _guardrail(question, history)
+                    if verdict is not None and not verdict.allowed:
+                        print(f"Agente: {verdict.reason}")
+                        continue
 
-                messages = [*history, {"role": "user", "content": question}]
-                print("Agente: ", end="", flush=True)
-                final = _stream(agent, messages, config, timings=args.timings)
-                history = final["messages"]
-                _print_trace(config, root_trace_id)
+                    messages = [*history, {"role": "user", "content": question}]
+                    print("Agente: ", end="", flush=True)
+                    final = _stream(agent, messages, config, timings=args.timings)
+                    history = final["messages"]
+            finally:
+                flush()
+                _print_trace({}, root_trace_id)
     finally:
         flush()
 

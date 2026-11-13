@@ -269,9 +269,10 @@ LANGFUSE_BASE_URL=http://localhost:3000
 LANGFUSE_PROJECT_ID=local-project
 ```
 
-With the keys present, `ask` sends one trace per invocation and `chat` groups
-all turns of a conversation under one Langfuse session. Each run prints the
-trace URL; pass `--timings` to `ask` or `chat` for a console summary
+With the keys present, `ask` sends one trace per invocation. `chat` sends one
+trace per user turn (`chat turn 1`, `chat turn 2`, ...); all turns share the
+same Langfuse session, so the session view reads as the conversation. Each run
+prints the trace URL; pass `--timings` to `ask` or `chat` for a console summary
 (`first_llm`, `tool_done`, `first_answer`, `total`). Inside a trace,
 `search_corpus` contains `retrieval` and its children `ensure_index`,
 `embed_query`, `vector_search` and `format_hits`, each with its own latency.
@@ -279,8 +280,8 @@ Every model call also has an `llm_call` child whose input is the exact API
 payload (Responses or Chat Completions format) and whose output is the generated
 message with reasoning, tool calls and text.
 
-The input guardrail runs inside the same trace as the agent. It appears as a
-`guardrail` observation named `input_guardrail`, with the message, history
+The input guardrail runs inside the same trace as the agent turn. It appears as
+a `guardrail` observation named `input_guardrail`, with the message, history
 window, model, threshold and number of judges as input, and the final verdict,
 both checks and every judge's probability, vote, certainty and error as output.
 Blocked queries are marked `WARNING`.
