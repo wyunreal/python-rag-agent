@@ -180,7 +180,8 @@ print(result.decision, result.certainty, result.support)
 
 The guardrail asks two independent questions (`legal` and
 `no_self_incrimination`) and allows the query only when both pass. In `chat`,
-the last six messages are sent as context, so short follow-ups such as "Sí" or
+the last `GUARDRAIL_HISTORY_TURNS` turns (default 3) are sent as context,
+together with the current user message, so short follow-ups such as "Sí" or
 "No, no estoy casado" are judged as part of the legal consultation instead of
 as isolated messages.
 
@@ -201,12 +202,14 @@ AGENT_INPUT_GUARDRAIL=1
 GUARDRAIL_MODEL=clef:27b
 GUARDRAIL_THRESHOLD=70
 GUARDRAIL_JUDGES=1
+GUARDRAIL_HISTORY_TURNS=3
 ```
 
 `GUARDRAIL_JUDGES` is the number of requests sent for each check. With only one
 decision model, the same question is repeated; more requests only become useful
-when different models or phrasings are added. Set `AGENT_INPUT_GUARDRAIL=0` to
-disable the check.
+when different models or phrasings are added. `GUARDRAIL_HISTORY_TURNS` is the
+number of previous conversation turns sent as context in chat mode; `0` disables
+it. Set `AGENT_INPUT_GUARDRAIL=0` to disable the check.
 
 ## Rebuilding the index
 

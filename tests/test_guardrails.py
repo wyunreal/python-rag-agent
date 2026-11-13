@@ -91,6 +91,54 @@ def test_history_is_included_and_filtered() -> None:
         }
 
 
+def test_history_is_trimmed_to_configured_turns() -> None:
+    history = [
+        {"role": "user", "content": "u1"},
+        {"role": "assistant", "content": "a1"},
+        {"role": "user", "content": "u2"},
+        {"role": "assistant", "content": "a2"},
+        {"role": "user", "content": "u3"},
+        {"role": "assistant", "content": "a3"},
+    ]
+    backend = QuestionBackend(95, 95)
+
+    result = check_input(
+        "Sí.",
+        config(history_turns=2),
+        history=history,
+        backend=backend,
+    )
+
+    assert result.allowed is True
+    expected = [
+        {"role": "user", "content": "u2"},
+        {"role": "assistant", "content": "a2"},
+        {"role": "user", "content": "u3"},
+        {"role": "assistant", "content": "a3"},
+    ]
+    for request in backend.requests:
+        assert request.context["conversation"] == expected
+
+
+def test_history_can_be_disabled() -> None:
+    history = [
+        {"role": "user", "content": "u1"},
+        {"role": "assistant", "content": "a1"},
+    ]
+    backend = QuestionBackend(95, 95)
+
+    result = check_input(
+        "Sí.",
+        config(history_turns=0),
+        history=history,
+        backend=backend,
+    )
+
+    assert result.allowed is True
+    for request in backend.requests:
+        assert request.context["conversation"] == []
+
+
 def test_non_legal_query_is_blocked() -> None:
     result = check_input(
         "¿Cómo se hace una tortilla?",
@@ -195,6 +243,11 @@ def test_config_validation() -> None:
         InputGuardConfig(threshold=0)
     with pytest.raises(ValueError, match="GUARDRAIL_MODEL"):
         InputGuardConfig(model="   ")
+    with pytest.raises(ValueError, match="GUARDRAIL_HISTORY_TURNS"):
+        InputGuardConfig(history_turns=-1)
+    with pytest.raises(TypeError, match="GUARDRAIL_HISTORY_TURNS"):
+        InputGuardConfig(history_turns=True)  # type: ignore[arg-type]
+    assert InputGuardConfig(history_turns=0).history_turns == 0
 
 
 def test_enabled_flag(monkeypatch: pytest.MonkeyPatch) -> None:

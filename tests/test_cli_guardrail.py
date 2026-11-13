@@ -17,11 +17,26 @@ def test_guardrail_history_keeps_recent_user_and_assistant_turns() -> None:
         AIMessage(content="¿Está casado?"),
     ]
 
-    assert cli._guardrail_history(messages) == [
+    assert cli._guardrail_history(messages, 3) == [
         {"role": "user", "content": "¿Puedo pedir la pensión de viudedad?"},
         {"role": "assistant", "content": "Depende de si está casado."},
         {"role": "assistant", "content": "¿Está casado?"},
     ]
+
+
+def test_guardrail_history_limits_the_number_of_turns() -> None:
+    messages = [
+        HumanMessage(content="u1"),
+        AIMessage(content="a1"),
+        HumanMessage(content="u2"),
+        AIMessage(content="a2"),
+    ]
+
+    assert cli._guardrail_history(messages, 1) == [
+        {"role": "user", "content": "u2"},
+        {"role": "assistant", "content": "a2"},
+    ]
+    assert cli._guardrail_history(messages, 0) == []
 
 
 def test_guardrail_passes_history_to_check_input(
@@ -31,7 +46,7 @@ def test_guardrail_passes_history_to_check_input(
 
     monkeypatch.setattr("guardrails.enabled", lambda: True)
 
-    def fake_check_input(query, history=None):
+    def fake_check_input(query, config=None, history=None):
         captured["query"] = query
         captured["history"] = history
         return SimpleNamespace(allowed=True)

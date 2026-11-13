@@ -47,9 +47,25 @@ class GuardrailResult:
     reason: str
 
 
+def _trim_turns(
+    conversation: list[dict[str, str]],
+    turns: int,
+) -> list[dict[str, str]]:
+    """Keep the last ``turns`` user messages and everything that follows them."""
+    if turns <= 0:
+        return []
+    user_indices = [
+        index for index, message in enumerate(conversation) if message["role"] == "user"
+    ]
+    if len(user_indices) <= turns:
+        return conversation
+    return conversation[user_indices[-turns] :]
+
+
 def _state(
     query: str,
     history: Sequence[Mapping[str, str]] | None,
+    history_turns: int,
 ) -> dict[str, Any]:
     conversation: list[dict[str, str]] = []
     for message in history or ():
@@ -60,7 +76,10 @@ def _state(
         if not content:
             continue
         conversation.append({"role": role, "content": content})
-    return {"conversation": conversation, "message": query}
+    return {
+        "conversation": _trim_turns(conversation, history_turns),
+        "message": query,
+    }
 
 
 def _requests(
@@ -68,7 +87,7 @@ def _requests(
     config: InputGuardConfig,
     history: Sequence[Mapping[str, str]] | None,
 ) -> list[DecisionRequest]:
-    state = _state(query, history)
+    state = _state(query, history, config.history_turns)
     requests: list[DecisionRequest] = []
     for index in range(config.judges):
         for check_name, question in CHECKS.items():

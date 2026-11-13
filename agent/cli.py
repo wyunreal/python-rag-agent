@@ -141,27 +141,34 @@ def _print_trace(config: dict) -> None:
     print(f"Langfuse: {trace_url(trace_id) or trace_id}")
 
 
-def _guardrail_history(messages: list) -> list[dict[str, str]]:
-    """Keep the last few user/assistant turns for the guardrail context."""
-    turns: list[dict[str, str]] = []
-    for message in messages[-6:]:
+def _guardrail_history(messages: list, turns: int) -> list[dict[str, str]]:
+    """Keep the last N user/assistant turns for the guardrail context."""
+    if turns <= 0:
+        return []
+    filtered: list[dict[str, str]] = []
+    for message in messages:
         role = {"human": "user", "ai": "assistant"}.get(getattr(message, "type", ""))
         if role is None:
             continue
         content = _text(message).strip()
         if content:
-            turns.append({"role": role, "content": content})
-    return turns
+            filtered.append({"role": role, "content": content})
+
+    user_indices = [index for index, message in enumerate(filtered) if message["role"] == "user"]
+    if len(user_indices) <= turns:
+        return filtered
+    return filtered[user_indices[-turns] :]
 
 
 def _guardrail(query: str, history: list | None = None) -> Any | None:
     """Run the input guardrail when enabled; return ``None`` if it is off."""
-    from guardrails import check_input, enabled
+    from guardrails import InputGuardConfig, check_input, enabled
 
     if not enabled():
         return None
-    turns = _guardrail_history(history) if history else None
-    return check_input(query, history=turns)
+    config = InputGuardConfig.from_env()
+    turns = _guardrail_history(history, config.history_turns) if history else None
+    return check_input(query, config, history=turns)
 
 
 def _cmd_index(args: argparse.Namespace, settings: Settings) -> int:
@@ -282,7 +289,8 @@ def _cmd_info(settings: Settings) -> int:
         print(
             "Guardrail de entrada:",
             f"{guardrail.model}, umbral {guardrail.threshold:g}%, "
-            f"{guardrail.judges} petición(es) por check",
+            f"{guardrail.judges} petición(es) por check, "
+            f"{guardrail.history_turns} turno(s) de contexto",
         )
     else:
         print("Guardrail de entrada: desactivado")
