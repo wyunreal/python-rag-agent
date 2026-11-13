@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from agent.tracing import last_trace_id, trace_url, tracing_enabled
+from agent.tracing import (
+    last_trace_id,
+    span,
+    trace_config,
+    trace_root,
+    trace_url,
+    tracing_enabled,
+)
 
 
 class _Handler:
@@ -48,3 +55,23 @@ def test_trace_url_is_none_without_project(monkeypatch: pytest.MonkeyPatch) -> N
 def test_last_trace_id_reads_the_callback_handler() -> None:
     assert last_trace_id({"callbacks": [_Handler()]}) == "abc123"
     assert last_trace_id({}) is None
+
+
+def test_trace_root_is_a_noop_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LANGFUSE_TRACING_ENABLED", "false")
+
+    with trace_root("test", session_id="session-1") as trace_context:
+        assert trace_context is None
+
+
+def test_trace_config_is_empty_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LANGFUSE_TRACING_ENABLED", "false")
+
+    assert trace_config(session_id="session-1", trace_name="test") == {}
+
+
+def test_guardrail_span_is_a_noop_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LANGFUSE_TRACING_ENABLED", "false")
+
+    with span("input_guardrail", as_type="guardrail") as observation:
+        assert observation is None

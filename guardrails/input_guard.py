@@ -18,6 +18,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from agent.tracing import span
 from decision import (
     DecisionConfig,
     DecisionRequest,
@@ -150,28 +151,37 @@ def _reason(
     return message
 
 
-def check_input(
+def decision_payload(result: DecisionResult) -> dict[str, Any]:
+    """Serialize a decision result for traces and the CLI."""
+    return {
+        "decision": result.decision,
+        "certainty": result.certainty,
+        "support": result.support,
+        "threshold": result.threshold,
+        "definitive": result.definitive,
+        "valid": result.valid,
+        "failed": result.failed,
+        "judges": [
+            {
+                "name": judge.request.name,
+                "model": judge.request.model,
+                "probability": judge.probability,
+                "vote": judge.vote,
+                "certainty": judge.certainty,
+                "definitive": judge.definitive,
+                "error": judge.error,
+            }
+            for judge in result.judges
+        ],
+    }
+
+
+def _check_input(
     query: str,
-    config: InputGuardConfig | None = None,
-    *,
-    history: Sequence[Mapping[str, str]] | None = None,
-    backend: JudgeBackend | None = None,
+    config: InputGuardConfig,
+    history: Sequence[Mapping[str, str]] | None,
+    backend: JudgeBackend | None,
 ) -> GuardrailResult:
-    """Classify a user query before it reaches the RAG agent.
-
-    Args:
-        query: raw user message.
-        config: guardrail configuration. Defaults to ``InputGuardConfig.from_env()``.
-        history: previous conversation turns as ``{"role", "content"}`` mappings.
-            They are sent as context so short follow-ups such as "Sí" are not
-            mistaken for unrelated messages.
-        backend: optional decision backend, mainly for tests.
-
-    Returns:
-        A :class:`GuardrailResult`. On any backend failure the affected judge is
-        discarded; if no judge is definitive, the query is blocked.
-    """
-    config = config or InputGuardConfig.from_env()
     normalized = query.strip()
     if not normalized:
         return GuardrailResult(
@@ -212,3 +222,56 @@ def check_input(
         blocked_by=blocked_by,
         reason=_reason(blocked_by, checks),
     )
+
+
+def check_input(
+    query: str,
+    config: InputGuardConfig | None = None,
+    *,
+    history: Sequence[Mapping[str, str]] | None = None,
+    backend: JudgeBackend | None = None,
+) -> GuardrailResult:
+    """Classify a user query before it reaches the RAG agent.
+
+    Args:
+        query: raw user message.
+        config: guardrail configuration. Defaults to ``InputGuardConfig.from_env()``.
+        history: previous conversation turns as ``{"role", "content"}`` mappings.
+            They are sent as context so short follow-ups such as "Sí" are not
+            mistaken for unrelated messages.
+        backend: optional decision backend, mainly for tests.
+
+    Returns:
+        A :class:`GuardrailResult`. On any backend failure the affected judge is
+        discarded; if no judge is definitive, the query is blocked.
+    """
+    config = config or InputGuardConfig.from_env()
+    trace_input = {
+        "message": query,
+        "history": list(history or ()),
+        "history_turns": config.history_turns,
+        "model": config.model,
+        "threshold": config.threshold,
+        "judges": config.judges,
+    }
+    with span(
+        "input_guardrail",
+        as_type="guardrail",
+        input=trace_input,
+    ) as observation:
+        result = _check_input(query, config, history, backend)
+        if observation is not None:
+            observation.update(
+                output={
+                    "allowed": result.allowed,
+                    "certainty": result.certainty,
+                    "support": result.support,
+                    "blocked_by": list(result.blocked_by),
+                    "reason": result.reason,
+                    "checks": {
+                        name: decision_payload(check) for name, check in result.checks.items()
+                    },
+                },
+                level="DEFAULT" if result.allowed else "WARNING",
+            )
+        return result

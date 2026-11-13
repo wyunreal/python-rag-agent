@@ -5,6 +5,7 @@ import threading
 import pytest
 
 from guardrails import InputGuardConfig, check_input, enabled
+from guardrails.input_guard import decision_payload
 from guardrails.policy import (
     LEGAL_DOMAIN_QUESTION,
     NO_SELF_INCRIMINATION_QUESTION,
@@ -62,6 +63,22 @@ def test_both_checks_pass() -> None:
         "¿Cuál es el plazo máximo de detención preventiva?"
     }
     assert all(request.context["conversation"] == [] for request in backend.requests)
+
+
+def test_decision_payload_contains_trace_details() -> None:
+    result = check_input(
+        "¿Qué pena tiene robar?",
+        config(),
+        backend=QuestionBackend(95, 90),
+    )
+
+    payload = decision_payload(result.checks["legal"])
+
+    assert payload["decision"] is True
+    assert payload["certainty"] == 95.0
+    assert payload["judges"][0]["name"] == "legal_0"
+    assert payload["judges"][0]["probability"] == 95.0
+    assert payload["judges"][0]["definitive"] is True
 
 
 def test_history_is_included_and_filtered() -> None:

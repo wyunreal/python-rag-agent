@@ -278,6 +278,12 @@ trace URL; pass `--timings` to `ask` or `chat` for a console summary
 Every model call also has an `llm_call` child whose input is the exact API
 payload (Responses or Chat Completions format) and whose output is the generated
 message with reasoning, tool calls and text.
+
+The input guardrail runs inside the same trace as the agent. It appears as a
+`guardrail` observation named `input_guardrail`, with the message, history
+window, model, threshold and number of judges as input, and the final verdict,
+both checks and every judge's probability, vote, certainty and error as output.
+Blocked queries are marked `WARNING`.
 Set `LANGFUSE_TRACING_ENABLED=false` to disable tracing without removing the
 keys.
 

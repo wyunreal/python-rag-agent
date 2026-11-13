@@ -35,6 +35,7 @@ from agent.tracing import (
     flush,
     last_trace_id,
     trace_config,
+    trace_root,
     trace_url,
     tracing_enabled,
 )
@@ -134,8 +135,8 @@ def _invoke(
     return result
 
 
-def _print_trace(config: dict) -> None:
-    trace_id = last_trace_id(config)
+def _print_trace(config: dict, trace_id: str | None = None) -> None:
+    trace_id = trace_id or last_trace_id(config)
     if not trace_id:
         return
     print(f"Langfuse: {trace_url(trace_id) or trace_id}")
@@ -204,27 +205,36 @@ def _cmd_search(args: argparse.Namespace, settings: Settings) -> int:
 
 
 def _cmd_ask(args: argparse.Namespace, settings: Settings) -> int:
-    verdict = _guardrail(args.question)
-    if verdict is not None and not verdict.allowed:
-        print(verdict.reason, file=sys.stderr)
-        return 2
-
-    from agent.agent import build_agent
-
-    check_embed_server()
-    agent = build_agent(settings)
-    messages = [{"role": "user", "content": args.question}]
-    config = trace_config(
-        session_id=f"ask-{uuid4().hex[:8]}",
-        trace_name="ask",
-        tags=["cli", settings.model],
-    )
+    session_id = f"ask-{uuid4().hex[:8]}"
     try:
-        if args.no_stream:
-            _invoke(agent, messages, config, timings=args.timings)
-        else:
-            _stream(agent, messages, config, timings=args.timings)
-        _print_trace(config)
+        with trace_root(
+            "ask",
+            session_id=session_id,
+            tags=["cli", settings.model],
+            input_data={"question": args.question},
+        ) as trace_context:
+            verdict = _guardrail(args.question)
+            if verdict is not None and not verdict.allowed:
+                print(verdict.reason, file=sys.stderr)
+                _print_trace({}, trace_context["trace_id"] if trace_context else None)
+                return 2
+
+            from agent.agent import build_agent
+
+            check_embed_server()
+            agent = build_agent(settings)
+            messages = [{"role": "user", "content": args.question}]
+            config = trace_config(
+                session_id=session_id,
+                trace_name="ask",
+                tags=["cli", settings.model],
+                trace_context=trace_context,
+            )
+            if args.no_stream:
+                _invoke(agent, messages, config, timings=args.timings)
+            else:
+                _stream(agent, messages, config, timings=args.timings)
+            _print_trace(config, trace_context["trace_id"] if trace_context else None)
     finally:
         flush()
     return 0
@@ -237,38 +247,46 @@ def _cmd_chat(args: argparse.Namespace, settings: Settings) -> int:
     agent = build_agent(settings)
     history: list = []
     session_id = f"chat-{uuid4().hex[:8]}"
-    config = trace_config(
-        session_id=session_id,
-        trace_name="chat",
-        tags=["cli", settings.model],
-    )
-    if tracing_enabled():
-        base_url = os.getenv("LANGFUSE_BASE_URL", "")
-        suffix = f" · {base_url}" if base_url else ""
-        print(f"Langfuse: sesión {session_id}{suffix}")
-    print("Agente jurídico (escribe /salir para terminar).")
     try:
-        while True:
-            try:
-                question = input("\nTú: ").strip()
-            except (EOFError, KeyboardInterrupt):
-                print()
-                return 0
-            if not question:
-                continue
-            if question.casefold() in {"/salir", "/exit", "/q"}:
-                return 0
+        with trace_root(
+            "chat",
+            session_id=session_id,
+            tags=["cli", settings.model],
+            input_data={"session_id": session_id},
+        ) as trace_context:
+            root_trace_id = trace_context["trace_id"] if trace_context else None
+            config = trace_config(
+                session_id=session_id,
+                trace_name="chat",
+                tags=["cli", settings.model],
+                trace_context=trace_context,
+            )
+            if tracing_enabled():
+                base_url = os.getenv("LANGFUSE_BASE_URL", "")
+                suffix = f" · {base_url}" if base_url else ""
+                print(f"Langfuse: sesión {session_id}{suffix}")
+            print("Agente jurídico (escribe /salir para terminar).")
+            while True:
+                try:
+                    question = input("\nTú: ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    print()
+                    return 0
+                if not question:
+                    continue
+                if question.casefold() in {"/salir", "/exit", "/q"}:
+                    return 0
 
-            verdict = _guardrail(question, history)
-            if verdict is not None and not verdict.allowed:
-                print(f"Agente: {verdict.reason}")
-                continue
+                verdict = _guardrail(question, history)
+                if verdict is not None and not verdict.allowed:
+                    print(f"Agente: {verdict.reason}")
+                    continue
 
-            messages = [*history, {"role": "user", "content": question}]
-            print("Agente: ", end="", flush=True)
-            final = _stream(agent, messages, config, timings=args.timings)
-            history = final["messages"]
-            _print_trace(config)
+                messages = [*history, {"role": "user", "content": question}]
+                print("Agente: ", end="", flush=True)
+                final = _stream(agent, messages, config, timings=args.timings)
+                history = final["messages"]
+                _print_trace(config, root_trace_id)
     finally:
         flush()
 

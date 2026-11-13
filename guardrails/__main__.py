@@ -12,32 +12,8 @@ import sys
 from dataclasses import replace
 from typing import Any
 
-from decision import DecisionResult
 from guardrails import InputGuardConfig, check_input
-
-
-def _decision_payload(result: DecisionResult) -> dict[str, Any]:
-    return {
-        "decision": result.decision,
-        "certainty": result.certainty,
-        "support": result.support,
-        "threshold": result.threshold,
-        "definitive": result.definitive,
-        "valid": result.valid,
-        "failed": result.failed,
-        "judges": [
-            {
-                "name": judge.request.name,
-                "model": judge.request.model,
-                "probability": judge.probability,
-                "vote": judge.vote,
-                "certainty": judge.certainty,
-                "definitive": judge.definitive,
-                "error": judge.error,
-            }
-            for judge in result.judges
-        ],
-    }
+from guardrails.input_guard import decision_payload
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -87,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
             "support": result.support,
             "blocked_by": list(result.blocked_by),
             "reason": result.reason,
-            "checks": {name: _decision_payload(check) for name, check in result.checks.items()},
+            "checks": {name: decision_payload(check) for name, check in result.checks.items()},
         }
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
