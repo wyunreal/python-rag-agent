@@ -134,6 +134,80 @@ How the pieces fit:
    the tool and the legal system prompt in
    [`agent/prompts.py`](agent/prompts.py).
 
+## Input guardrail
+
+[`guardrails/`](guardrails/) checks each user query before the agent retrieves
+anything or calls the main LLM. It rejects queries that are not legal
+consultations and queries that contain a first-person admission of a
+potentially criminal fact, or that ask for help to commit or conceal a crime.
+General questions, hypotheticals, questions about third parties and
+first-person civil, family or labour questions are allowed.
+
+The guardrail is built on [`decision/`](decision/), a generic Jev-style decision
+engine:
+
+- Each `DecisionRequest` carries a `model`, a `context` (the System One
+  `state`) and a yes/no `question`.
+- Requests run in parallel with `ThreadPoolExecutor`, so N requests can target
+  N models.
+- Each model returns `P(yes)` (`noul`) in `[0, 1]`. The engine converts it to a
+  percentage and computes a vote, a certainty and a final decision.
+- A judge is *definitive* when `max(P(yes), P(no))` reaches the configured
+  threshold. The final decision is the majority of definitive votes; a tie or
+  no definitive votes resolve to `False` (fail-closed). `certainty` is the mean
+  probability that the definitive judges assign to the winning answer and
+  `support` is the number of definitive requests backing it.
+- A failed request is recorded and excluded. If no judge remains definitive, the
+  decision is `False`.
+
+```python
+from decision import DecisionConfig, DecisionRequest, decide
+
+result = decide(
+    [
+        DecisionRequest(
+            model="clef:27b",
+            context="¿Cuál es el plazo máximo de detención preventiva?",
+            question="Is this a legal consultation?",
+            name="legal",
+        ),
+    ],
+    DecisionConfig(threshold=70),
+)
+
+print(result.decision, result.certainty, result.support)
+```
+
+The guardrail asks two independent questions (`legal` and
+`no_self_incrimination`) and allows the query only when both pass. In `chat`,
+the last six messages are sent as context, so short follow-ups such as "Sí" or
+"No, no estoy casado" are judged as part of the legal consultation instead of
+as isolated messages.
+
+Run it directly:
+
+```bash
+python -m guardrails "¿Cuál es el plazo máximo de detención preventiva?"
+python -m guardrails --json "Ayer robé un coche, ¿qué pena me puede caer?"
+python -m agent ask "..."        # guardrail runs automatically
+```
+
+`clef:27b` is a decision model and only supports `POST /v1/systemone`; it does
+not accept `/v1/chat/completions`. The guardrail is configured from
+`.env`:
+
+```dotenv
+AGENT_INPUT_GUARDRAIL=1
+GUARDRAIL_MODEL=clef:27b
+GUARDRAIL_THRESHOLD=70
+GUARDRAIL_JUDGES=1
+```
+
+`GUARDRAIL_JUDGES` is the number of requests sent for each check. With only one
+decision model, the same question is repeated; more requests only become useful
+when different models or phrasings are added. Set `AGENT_INPUT_GUARDRAIL=0` to
+disable the check.
+
 ## Rebuilding the index
 
 `ensure_index()` compares the stored fingerprint with the current one and

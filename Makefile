@@ -100,9 +100,9 @@ embed-logs:
 lint: venv
 	@command -v $(VENV)/bin/ruff >/dev/null || { \
 		echo "ruff not installed. Run: $(PY) -m pip install -e '.[dev]'" >&2; exit 1; }
-	@$(PY) -m ruff check boe_ingest agent tests
+	@$(PY) -m ruff check boe_ingest agent decision guardrails tests
 
 format: venv
 	@command -v $(VENV)/bin/ruff >/dev/null || { \
 		echo "ruff not installed. Run: $(PY) -m pip install -e '.[dev]'" >&2; exit 1; }
-	@$(PY) -m ruff format boe_ingest agent tests
+	@$(PY) -m ruff format boe_ingest agent decision guardrails tests

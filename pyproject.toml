@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "RAG agent over Spanish consolidated legislation (BOE open data)"
 requires-python = ">=3.11"
 dependencies = [
+    "httpx>=0.27",
     "langchain>=1.0",
     "langchain-openai>=1.0",
     "langfuse>=4.0",
@@ -27,17 +28,18 @@ dev = ["ruff>=0.6", "pytest>=8.0"]
 [project.scripts]
 boe-ingest = "boe_ingest.cli:main"
 rag-agent = "agent.cli:main"
+input-guard = "guardrails.__main__:main"
 
 [tool.setuptools]
-packages = ["boe_ingest", "agent"]
+packages = ["boe_ingest", "agent", "decision", "guardrails"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["boe_ingest", "agent", "tests"]
+src = ["boe_ingest", "agent", "decision", "guardrails", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "SIM", "UP"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["agent", "boe_ingest"]
+known-first-party = ["agent", "boe_ingest", "decision", "guardrails"]

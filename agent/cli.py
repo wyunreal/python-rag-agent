@@ -141,6 +141,29 @@ def _print_trace(config: dict) -> None:
     print(f"Langfuse: {trace_url(trace_id) or trace_id}")
 
 
+def _guardrail_history(messages: list) -> list[dict[str, str]]:
+    """Keep the last few user/assistant turns for the guardrail context."""
+    turns: list[dict[str, str]] = []
+    for message in messages[-6:]:
+        role = {"human": "user", "ai": "assistant"}.get(getattr(message, "type", ""))
+        if role is None:
+            continue
+        content = _text(message).strip()
+        if content:
+            turns.append({"role": role, "content": content})
+    return turns
+
+
+def _guardrail(query: str, history: list | None = None) -> Any | None:
+    """Run the input guardrail when enabled; return ``None`` if it is off."""
+    from guardrails import check_input, enabled
+
+    if not enabled():
+        return None
+    turns = _guardrail_history(history) if history else None
+    return check_input(query, history=turns)
+
+
 def _cmd_index(args: argparse.Namespace, settings: Settings) -> int:
     if not args.rebuild:
         try:
@@ -174,6 +197,11 @@ def _cmd_search(args: argparse.Namespace, settings: Settings) -> int:
 
 
 def _cmd_ask(args: argparse.Namespace, settings: Settings) -> int:
+    verdict = _guardrail(args.question)
+    if verdict is not None and not verdict.allowed:
+        print(verdict.reason, file=sys.stderr)
+        return 2
+
     from agent.agent import build_agent
 
     check_embed_server()
@@ -224,6 +252,11 @@ def _cmd_chat(args: argparse.Namespace, settings: Settings) -> int:
             if question.casefold() in {"/salir", "/exit", "/q"}:
                 return 0
 
+            verdict = _guardrail(question, history)
+            if verdict is not None and not verdict.allowed:
+                print(f"Agente: {verdict.reason}")
+                continue
+
             messages = [*history, {"role": "user", "content": question}]
             print("Agente: ", end="", flush=True)
             final = _stream(agent, messages, config, timings=args.timings)
@@ -241,6 +274,18 @@ def _cmd_info(settings: Settings) -> int:
     print("Embeddings:", settings.embedding_model)
     print("Embeddings device (local):", settings.device)
     print("Embedding server:", os.getenv("AGENT_EMBED_SERVER") or "local")
+    from guardrails import InputGuardConfig
+    from guardrails import enabled as guardrail_enabled
+
+    if guardrail_enabled():
+        guardrail = InputGuardConfig.from_env()
+        print(
+            "Guardrail de entrada:",
+            f"{guardrail.model}, umbral {guardrail.threshold:g}%, "
+            f"{guardrail.judges} petición(es) por check",
+        )
+    else:
+        print("Guardrail de entrada: desactivado")
     if tracing_enabled():
         print("Tracing:", f"langfuse {os.getenv('LANGFUSE_BASE_URL', '(cloud)')}")
     else:
